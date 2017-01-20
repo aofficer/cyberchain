@@ -1,0 +1,21 @@
+div#block-kewlogin-kewlogin {
+  width: 400px;
+}
+
+div#block-kewlogin-kewlogin div.form-item-name {
+  float: left;
+}
+
+div#block-kewlogin-kewlogin div.form-item-pass {
+  float: left;
+}
+
+div#block-kewlogin-kewlogin {
+  float: left;
+}
+
+div#block-kewlogin-kewlogin #edit-actions {
+  margin: 0;
+}
+
+#block-kewlogin-kewlogin .form-item { margin: 0; }

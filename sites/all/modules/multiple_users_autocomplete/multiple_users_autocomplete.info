@@ -1,0 +1,7 @@
+; $Id$
+name = Multiple Users Autocomplete
+description = Allows free tagging of users in a text field in the Forms API
+core = 7.x
+package = Users
+version = 7.x-1.0-dev
+

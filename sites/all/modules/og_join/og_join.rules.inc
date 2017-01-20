@@ -1,0 +1,43 @@
+<?php
+
+/** Implements hook_rules_action_info() **/
+function og_join_rules_action_info() {
+  $actions = array();
+  
+  $actions['mail_to_users_of_group_role'] = array(
+    'label' => t('Send mail to all users of a group role.'),
+    'group' => t('Organic groups'),
+    'parameter' => array(
+      'group' => array(
+        'type' => 'group',
+        'label' => t('Group'),
+        'description' => t('The group which members of a certain role will get email.')
+      ),
+      'roles' => array(
+        'type' => 'list<integer>',
+        'label' => t('Roles'),
+        'options list' => 'og_join_roles',
+        'description' => t('Select the group roles whose users should receive the mail.'),
+      ),
+      'subject' => array(
+        'type' => 'text',
+        'label' => t('Subject'),
+        'description' => t("The mail's subject."),
+      ),
+      'message' => array(
+        'type' => 'text',
+        'label' => t('Message'),
+        'description' => t("The mail's message body."),
+      ),
+      'from' => array(
+        'type' => 'text',
+        'label' => t('From'),
+        'description' => t("The mail's from address. Leave it empty to use the site-wide configured address."),
+        'optional' => TRUE,
+      ),
+    ),
+    'base' => 'og_join_action_mail_to_users_of_group_role',
+  );
+  
+  return $actions;
+}

@@ -1,0 +1,537 @@
+/* Cyber Chain Custom Styles - created 05/12/2015  */
+
+@import url(http://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600,700);
+
+.clearfix {clear:both;}
+
+body {
+	font-family:"Source Sans Pro", arial;
+	font-weight:400;
+	font-size:14px;
+	background:url(../../../default/files/2015/bg-topbar.png) repeat-x;
+}
+
+body.admin-menu {
+  background-position: 0 29px
+}
+
+a {
+	color:#0082FF;
+}
+
+p, h1, h2, h3, h4, h5 h6 {
+	margin:0;
+}
+
+.page-width {
+	width:100%;
+	max-width:960px;
+}
+
+.front .wrapper-content .block + .block,
+.front .tabs,
+.wrapper-header {
+	margin:0;
+}
+
+
+.stack-preheader {
+	background:#545454;
+	border:none;
+	height:40px;
+}
+
+#block-system-main-menu a {
+	color:#fff;
+	font-weight:300;
+}
+#block-system-main-menu a.active {
+	color:#ccc;
+}
+
+
+
+
+/******************************************************************************************/
+/* USER LOGIN ****************************************************************************/
+/******************************************************************************************/
+
+#preheader {
+	font-size:.9em;
+}
+
+div#block-kewlogin-kewlogin {
+	margin-top:8px;
+	width:100%
+}
+
+#user-login {
+	font:inherit;
+	float:none;
+	margin-top:0;
+}
+
+#user-login .form-text {
+	background:none;
+	border-color:#999;
+	color:#fff;
+	border-radius:0;
+	-webkit-border-radius:0;
+	-moz-border-radius:0;
+}
+
+#user-login .form-actions .form-submit {
+	background:#777;
+	color:#fff;
+	font-weight:400;
+	border: none;
+	font-size: 10px;
+	width: 80px;
+	height: 25px;
+	padding: 0;
+	line-height: 25px;
+	border-radius:0;
+	-webkit-border-radius:0;
+	-moz-border-radius:0;
+}
+
+.logged-in .block-kewlogin .content {
+	padding:0;
+	font-weight:300;
+	line-height:20px;
+	color:#fff;
+}
+
+.block-kewlogin a {
+	color:#fff;
+	padding:0 5px;
+}
+
+#preheader .col.left:first-child {
+	text-align:right;
+	width:575px;
+	width:500px\9; /* IE6, IE7, IE8, IE9 */
+}
+
+#preheader .col-second.left {
+	width:375px;
+	padding:0;
+	margin:0;
+	width:420px\9; /* IE6, IE7, IE8, IE9 */
+}
+
+
+/******************************************************************************************/
+/* HEADER LOGO ****************************************************************************/
+/******************************************************************************************/
+
+.stack-header-inner {
+	height:115px;
+}
+
+
+#header-inner .col-c {
+	width:inherit;
+	overflow:visible;
+	width:100%;
+}
+
+.site-name {
+	width:90%;
+	max-width:563px;
+	height:70px;
+  	background:url(../../../default/files/2015/logo-slogan.png) no-repeat 0 0;
+  	background-size:100%;
+	position: relative;
+  	top:40px;
+  	margin-left:20px;
+}
+
+
+/******************************************************************************************/
+/* BANNER NAV *****************************************************************************/
+/******************************************************************************************/
+
+.stack-navigation .menu {
+	border:none;
+	float:right;
+}
+
+.stack-navigation .menu li a {
+	color:#0082FF;
+}
+.stack-navigation .menu li a:hover {
+	color:#fff;
+	background-color:#0082FF;
+}
+
+/******************************************************************************************/
+/* BANNER *********************************************************************************/
+/******************************************************************************************/
+
+#banner-region {
+	border:0;
+	padding:0;
+}
+
+.layout-wrapper.top-left {
+	margin:6% 0 0 8%;
+}
+
+.rb-textbox-type-header .rb-textbox,
+.rb-textbox-type-text .rb-textbox {
+	background:none;
+	width:inherit;
+	color:#fff;
+	padding:0;
+	margin:0;
+}
+
+.rb-textbox-type-header .rb-textbox {
+	font-size:1.7em;
+	line-height: 1em;
+	font-weight:600;
+}
+
+.rb-textbox-type-text .rb-textbox {
+	margin-top:.3em;
+  	font-size:1.8em;
+	font-weight:300;
+  	line-height: 1.2em;
+}
+
+.rotating-banner a {
+	color:#0082FF;
+}
+.rotating-banner a:hover {
+	color:#00afff;
+}
+.controls {
+	position: relative;
+	z-index: 1000;
+	top: -35px;
+}
+
+.controls.buttons a {
+	background-color:#fff;
+	width: 3px;
+	height: 3px;
+	margin:0 5px;
+	border-radius: 100%;
+	-moz-border-radius: 100%;
+	-webkit-border-radius: 100%;
+}
+
+.controls.buttons a.activeSlide {
+	background-color:#0082FF;
+}
+
+
+
+
+
+/******************************************************************************************/
+/* ASSESSMENT *****************************************************************************/
+/******************************************************************************************/
+
+.assessment {
+  	text-align:center;
+  	background:#eee;
+  	height:350px;
+  	background-image:url(../../../default/files/2015/bg-assessment3.jpg);
+  	background-position:center;
+}
+.assessment div {
+  	position: relative;
+	top: 45%;
+	transform: translateY(-45%);
+}
+
+.assessment h2 {
+  	font-size:2.2em;
+  	line-height:1em;
+}
+.assessment h3 {
+  	margin:.7em 0;
+  	font-size:1.2em;
+}
+.assessment a {
+	display:inline-block;
+	margin-top:60px;
+	background-color:#0082FF;
+	color:#fff;
+	border-radius:4px;
+	-webkit-border-radius:4px;
+	-moz-border-radius:4px;
+	padding:10px 20px;
+	font-size:1.2em;
+}
+.assessment a:hover {
+	text-decoration:none;
+	background-color:#00afff;
+}
+
+/******************************************************************************************/
+/* RISK ***********************************************************************************/
+/******************************************************************************************/
+
+.risk {
+  	text-align:center;	
+}
+
+.risk h2 {
+  	font-size:1.7em;
+  	margin:15px 0;	
+}
+
+.risk div {
+	float: left;
+  	width: 33.3%;
+  	margin: 10px 0;
+}
+
+.risk .box-4 {
+	padding-left:16.5%;
+}
+
+.risk span {
+	display:block;
+	margin:10px 0;
+}
+
+/******************************************************************************************/
+/* TOOLS **********************************************************************************/
+/******************************************************************************************/
+
+.tools {
+	background: rgba(187,187,187,1);
+	background: -moz-linear-gradient(top, rgba(187,187,187,1) 0%, rgba(255,255,255,1) 100%);
+	background: -webkit-gradient(left top, left bottom, color-stop(0%, rgba(187,187,187,1)), color-stop(100%, rgba(255,255,255,1)));
+	background: -webkit-linear-gradient(top, rgba(187,187,187,1) 0%, rgba(255,255,255,1) 100%);
+	background: -o-linear-gradient(top, rgba(187,187,187,1) 0%, rgba(255,255,255,1) 100%);
+	background: -ms-linear-gradient(top, rgba(187,187,187,1) 0%, rgba(255,255,255,1) 100%);
+	background: linear-gradient(to bottom, rgba(187,187,187,1) 0%, rgba(255,255,255,1) 100%);
+	filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#bbbbbb', endColorstr='#ffffff', GradientType=0 );
+	text-align: center;
+	padding:1em 0;
+}
+
+.tools div {
+	display: inline-block;
+  	width: 25%;
+  	padding: 0 4%;
+}
+
+
+.tools img {
+	/* width:60%; */
+	width:160px;
+}
+
+.tools h2 {
+ 	margin-bottom:1.7em;
+ 	font-size:1.7em;
+}
+.tools h3 {
+ 	margin-top:1.5em;
+ 	font-size:1.25em;
+}
+.tools span {
+	display:block;
+}
+
+/******************************************************************************************/
+/* ALERTS NEWS **********************************************************************************/
+/******************************************************************************************/
+
+.wrapper-footer {
+	border-top:1px solid #c0c0c0;
+	border-bottom:1px solid #c0c0c0;
+	margin-bottom:0;
+	padding:0;
+}
+
+#block-views-alerts-block-1,
+#block-views-cyber-news-alerts-block-1 {
+	padding:30px 35px;
+	padding-bottom:0;
+}
+
+#block-views-cyber-news-alerts-block-1 {
+	border-left:1px solid #c0c0c0;
+}
+
+#block-views-alerts-block-1 h2,
+#block-views-cyber-news-alerts-block-1 h2 {
+	margin:0;
+	font-size:1.5em;
+}
+
+.view-alerts .view-content,
+.view-cyber-news-alerts .view-content {
+	margin:0;
+	color:#333;
+}
+
+.view-alerts .views-row ,
+.view-cyber-news-alerts .views-row  {
+	margin-top:1.2em;
+	padding-bottom:1.2em;
+	border-bottom:1px solid #c0c0c0;
+}
+
+.view-alerts .views-row-last,
+.view-cyber-news-alerts .views-row-last  {
+	border-bottom:none;
+}
+
+.view-alerts .views-field-title,
+.view-cyber-news-alerts .views-field-title {
+	font-size:1.1em;
+}
+
+#block-views-alerts-block-1 .views-field-description,
+#block-views-cyber-news-alerts-block-1 .views-field-description-1 {
+	color:#555;
+}
+
+#block-views-alerts-block-1 .views-field-link,
+#block-views-alerts-block-1 .views-field-description,
+#block-views-cyber-news-alerts-block-1 .views-field-link,
+#block-views-cyber-news-alerts-block-1 .views-field-description-1,
+#block-views-cyber-news-alerts-block-1 .views-field-description-1 p {
+	display:inline;
+}
+
+/******************************************************************************************/
+/* COPYRIGHT ******************************************************************************/
+/******************************************************************************************/
+
+#copyright {
+	background:#000;
+}  
+  
+.stack-copyright .inner {
+	border:0;
+}
+
+#copyright .content {
+	padding:5px 20px;
+	color: #aaa;
+	font-weight: 300;
+	font-size: .8em;
+	line-height:1.2em;
+}
+
+#copyright .content a {
+	color:#aaa;
+}
+
+#copyright h3 {
+	color: #eee;
+	font-weight:300;
+}
+  
+#copyright .footer-contact {
+	padding:1em 0;
+}
+ #copyright .divline {
+	margin:.3em 0 1.8em 0;
+	border:1px solid #444;
+}
+ 
+ 
+/******************************************************************************************/
+/* MOBILE *********************************************************************************/
+/******************************************************************************************/
+  
+@media screen and (max-width: 959px) {
+.risk div {width: 50%;}
+.risk .box-4 {padding-left:0;}
+
+
+
+} /* end 960 */
+
+@media screen and (max-width: 640px) {
+
+body {
+font-size:16px;
+}
+
+#preheader {
+	display:none;
+}
+
+.site-name {
+	margin:0 auto;
+}
+
+.assessment div {
+  	position: relative;
+	top: 25%;
+	transform: translateY(-25%);
+}
+
+.risk div {
+  	width: 100%;
+  	margin:10px auto;
+  	float:none;
+  	margin-bottom:50px; 	
+}
+
+.risk span {
+	font-size:1.2em;
+}
+
+.tools div {
+	display: block;
+  	width: 100%;
+  	padding:1em 0;
+}
+
+.tools span {font-size:1.2em;padding:0 15px;}
+
+.tools h2,
+.tools h3 {
+ 	margin:0;
+}
+
+#footer .left {float:none;}
+#footer .col-2 .col {width:100%}
+
+#block-views-cyber-news-alerts-block-1 {border-left:0;}
+
+#block-views-alerts-block-1,
+#block-views-cyber-news-alerts-block-1 {
+	padding:10px;
+	padding-bottom:0;
+}
+
+
+
+} /* end 640 */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,38 @@
+<?php
+
+/** Implements hook_schema() **/
+function capability_maturity_schema() {
+  $schema = array();
+  
+  $schema['assessment_question_numbers'] = array(
+    'description' => t('Stores the question number of assessment components'),
+    'fields' => array(
+      'nid' => array(
+        'description' => t(''),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'cid' => array(
+        'description' => t(''),
+        'type' => 'int',
+        'size' => 'small',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'question' => array(
+        'description' => t(''),
+        'type' => 'int',
+        'size' => 'small',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('nid', 'cid'),
+  );
+  
+  return $schema;
+}

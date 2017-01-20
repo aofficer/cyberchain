@@ -1,0 +1,86 @@
+<?php
+
+function library_folder_init() {
+  if ($_GET['q'] == 'library/0') {
+    drupal_goto('library');
+  }
+}
+
+/** Implements hook_menu() **/
+function library_folder_menu() {
+  $menu = array();
+  
+  $menu['library-folder/add'] = array(
+  
+  );
+  //$menu['library-folder/%taxonomy_term/edit']
+}
+
+function library_folder_form_taxonomy_form_term_alter(&$form, &$form_state, $form_id) {
+  //printr($form);
+  drupal_add_css(drupal_get_path('module', 'library_folder') . '/library_folder.css');
+  //unset($form['description']);
+  $form['relations']['#collapsed'] = FALSE;
+  $form['relations']['parent']['#title'] = 'Parent folder';
+  if (isset($_GET['parent'])) {
+    $form['relations']['parent']['#default_value'] = array($_GET['parent'] => $_GET['parent']);
+  }
+  //$form_state['redirect'] = 
+  //unset($form['relations']['weight']);
+}
+
+function library_folder_form_library_node_form_alter(&$form, &$form_state, $form_id) {
+  drupal_add_css(drupal_get_path('module', 'library_folder') . '/library_folder.css');
+  if (isset($_GET['parent'])) {
+    $form['field_folder']['und']['#default_value'] = array($_GET['parent'] => $_GET['parent']);
+  }
+  //printr($form);
+}
+
+/** Implements hook_menu_local_tasks_alter() **/
+function library_folder_menu_local_tasks_alter(&$data, $router_item, $root_path) {
+  //printr('wut');
+  switch ($root_path) {
+    case 'library':
+    case 'library/%':
+      //printr($router_item);
+      if (isset($router_item['page_arguments'][1])) {
+        $term_id = $router_item['page_arguments'][1];
+      }
+      else {
+        $term_id = 0;
+      }
+      
+      $item = menu_get_item('admin/structure/taxonomy/library_folder/add');
+      if ($item['access']) {
+        $item['title'] = 'New folder';
+        if ($term_id) {
+          $item['localized_options']['query'] = array('parent' => $term_id, 'destination' => 'library/' . $term_id);
+        }
+        $data['actions']['output'][] = array(
+          '#theme' => 'menu_local_action',
+          '#link' => $item,
+        );
+      }
+      
+      $item = menu_get_item('node/add/library');
+        if ($item['access']) {
+          $item['title'] = t('New library item');
+          if ($term_id) {
+          $item['localized_options']['query'] = array('parent' => $term_id, 'destination' => 'library/' . $term_id);
+        }
+          $data['actions']['output'][] = array(
+            '#theme' => 'menu_local_action',
+            '#link' => $item,
+          );
+        }
+      break;
+  }
+}
+
+function library_folder_admin_paths_alter(&$paths) {
+  //printr($paths);
+  unset($paths['taxonomy/term/*/edit']);
+  $paths['admin/structure/taxonomy/library_folder/add'] = 0;
+  $paths['node/add/library'] = 0;
+}

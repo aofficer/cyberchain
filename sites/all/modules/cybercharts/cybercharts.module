@@ -1,0 +1,185 @@
+<?php
+
+/**
+ * @file
+ * cybercharts.module
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function cybercharts_menu() {
+  $items = array();
+  return $items;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function cybercharts_form_alter() {
+}
+
+function cybercharts_print_r($s) {
+  echo '<pre>';
+  print_r($s);
+  echo '</pre>';  
+}
+
+function cybercharts_render($functions) {
+  $results = '<div class="cybercharts">';
+  foreach($functions as $function) {
+    $results .= cybercharts_radial_progress_render($function);
+  }
+  $results .= '</div>';
+  
+  $results .= '<div class="cybercharts-scores">';
+  foreach($functions as $function) {
+    $results .= cybercharts_scores_render($function);
+  }
+  $results .= '</div>';
+  
+  $results .= '
+<script language="JavaScript">
+  d3.select(".cybercharts").selectAll(".progress-chart")
+    .on("click", function(d) {
+          d3.select(".cybercharts").selectAll(".progress-chart").classed("active-chart",false);
+          d3.select(".cybercharts").selectAll(".progress-chart path.bg").classed("active-chart",false);
+          
+          d3.select(this).classed("active-chart",true);
+          d3.select(this).selectAll("path.bg").classed("active-chart",true);
+          
+          d3.select(".cybercharts-scores").selectAll(".cybercharts-score").style("opacity", 0);
+          d3.select(".cybercharts-scores").selectAll("#scores-"+this.id).style("opacity", 1);
+        })
+    .on("mouseover", function(d) {
+          d3.select(this).style("cursor", "pointer");
+        });
+
+  d3.select(".cybercharts-scores").selectAll(".cybercharts-score").style("opacity", 0);
+  d3.select(".cybercharts").selectAll(".progress-chart").classed("active-chart",false);
+  d3.select(".cybercharts").selectAll(".progress-chart path.bg").classed("active-chart",false); 
+  
+  d3.select(".cybercharts-scores").select(".cybercharts-score").style("opacity", 1);
+  d3.select(".cybercharts").select(".progress-chart").classed("active-chart",true);
+  d3.select(".cybercharts").select(".progress-chart path.bg").classed("active-chart",true);
+  
+</script>  
+  ';
+  
+  return $results;
+}
+
+function cybercharts_single_score_render($nid, $scores_css, $total, $possible) {
+  $percentage = $total / $possible;
+  
+  $results = '
+var bar_'.$nid.' = new ProgressBar.Line(".'.$scores_css.'", {
+  strokeWidth: 4,
+  easing: "easeInOut",
+  duration: 1400,
+  color: "#A6CE39",
+  trailColor: "#053F5D",
+  trailWidth: 1,
+  svgStyle: {width: "100%", height: "100%"},
+  text: {
+    style: {
+      // Text color.
+      // Default: same as stroke color (options.color)
+      color: "#000",
+      position: "absolute",
+    },
+    autoStyleContainer: false
+  },
+  step: (state, bar) => {
+    bar.setText("'.$total.'/'.$possible.'");
+  }
+});
+bar_'.$nid.'.animate('.$percentage.');  // Number from 0.0 to 1.0
+  ';  
+  return $results;
+}
+
+function cybercharts_scores_render($function) {
+  //cybercharts_print_r($function);
+  
+  $title = $function['title'];
+  $scores_css = 'cybercharts-scores-'.$title;
+  
+  $module_path = drupal_get_path('module', 'cybercharts');
+  
+  drupal_add_js('//cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js', 'external');
+  //http://progressbarjs.readthedocs.io/en/latest/api/shape/
+  drupal_add_js($module_path.'/js/progressbar.js');
+  
+  $results = '<div id="scores-'.$title.'" class="'.$scores_css.' cybercharts-score">';
+  foreach($function['subscores'] as $nid => $score) {    
+    $subscore_css = $scores_css.'-'.$nid;
+    $results .= '<h1>'.$score['title'].'</h1>';
+    $results .= '<div class="'.$subscore_css.' cybercharts-score-single-bar"></div>';
+    
+    $results .= '<script>';
+    $results .= cybercharts_single_score_render($nid, $subscore_css, $score['total'], $score['possible']);
+    $results .= '</script>';
+  }
+  $results .= '</div>';
+  
+  return $results;
+}
+
+function cybercharts_radial_progress_render($function) { 
+  $title = $function['title'];
+  $total = $function['total'];
+  $possible = $function['possible'];
+
+  $module_path = drupal_get_path('module', 'cybercharts');
+  
+  drupal_add_js('//cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js', 'external');
+  
+  //http://pablomolnar.github.io/radial-progress-chart/
+  drupal_add_js($module_path.'/js/radial-progress-chart.js');
+  drupal_add_css($module_path.'/css/styles.css');
+  drupal_add_css('//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css');
+
+  $percentage = ($total / $possible) * 100.0;
+  
+  $progress_var = 'progress_'.$title;
+  $progress_css = 'progress-'.$title;
+  
+  $results = '
+<div id="'.$title.'" class="'.$progress_css.' progress-chart"></div>
+  
+<script language="JavaScript">
+var '.$progress_var.' = new RadialProgressChart(".'.$progress_css.'", {
+  diameter: 95,
+  stroke: {
+    width: 19,
+    gap: 1
+  },
+  shadow: {
+    width: 0,
+  },
+  series: [{
+    value: 0,
+    labelStart: "\uF101",
+    color: {
+      solid: "#A6CE39",
+      background: "#053F5D",
+    },  
+  }],
+  center: [
+    "'.$title.'",
+    function(percentage) {
+      return percentage + "%";
+    },
+    "[ '.$total.' / '.$possible.' ]",
+  ]
+});
+'.$progress_var.'.update('.$percentage.');
+</script>
+  ';
+  
+  //$results .= '<div class="cybercharts-scores '.$progress_css.'-scores">'.$title.' Scores</div>';
+  
+  return $results;
+}
+

@@ -1,0 +1,129 @@
+<?php
+
+/** Implements hook_menu() **/
+function og_admin_menu() {
+  $menu = array();
+  
+  $menu['initiative/%og_settings_node/admin/members'] = array(
+    'title' => 'Members',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -1000,
+  );
+  $menu['initiative/%og_settings_node/admin'] = array(
+    'title' => 'Admin',
+    'title callback' => 'og_admin_title_callback',
+    'title arguments' => array(1),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_ui_user_admin_account', 'node', 1),
+    'access callback' => 'og_admin_access',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'og_ui.admin.inc',
+    'file path' => drupal_get_path('module', 'og_ui'),
+  );
+  $menu['initiative/%og_settings_node/admin/add-user'] = array(
+    'title' => 'Add members',
+    'description' => 'Add a new user to le groupzor.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_admin_add_user_form', 1),
+    'access callback' => 'og_user_access_by_entity',
+    'access arguments' => array('administer group', 'node', 1),
+    //'tab_parent' => 'initiative/%og_settings_node/derp',
+    'type' => MENU_LOCAL_ACTION,
+  );
+  /*$menu['initiative/%node'] = array(
+    'title' => 'hmmmm',
+    'page callback' => 'derp',
+    'access arguments' => array('access content'),
+  );*/
+  
+  return $menu;
+}
+
+function og_admin_title_callback($nid) {
+  $node = node_load($nid);
+  //drupal_set_title($node->title . ' / Adminjkjoijoijiojoi');
+  //return $node->title;
+  return 'Admin';
+}
+
+/** Check to see if the user has administrative access to the initiative.
+ *  If they 'own' the node, they should automatically be given access.
+ *  Otherwise they need the 'administer group' OG permission
+ */
+function og_admin_access($nid) {
+  global $user;
+  
+  //printr($nid);
+  
+  $node = node_load($nid);
+  $group = og_get_group('node', $nid);
+  if ($node->uid == $user->uid) {
+    return TRUE;
+  }
+  
+  return og_user_access($group->gid, 'administer group');
+}
+
+/** Define the form that allows for adding users to the initiative **/
+function og_admin_add_user_form($form, &$form_state, $nid) {
+  $form['group'] = array(
+    '#type' => 'value',
+    '#value' => og_get_group('node', $nid),
+  );
+  $form['users'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Add people to the group'),
+    '#autocomplete_path' => 'user/autocomplete/multiple',
+    '#description' => t('Separate their usernames with commas.'),
+    //'#weight' => -1001,
+    //'#prefix' => '<div class="container-inline">',
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Go'),
+    //'#weight' => 1000,
+    //'#suffix' => '</div>',
+  );
+  
+  return $form;
+}
+
+/********** Form validation functions **********/
+function og_admin_add_user_form_validate($form, &$form_state) {
+  $users = drupal_explode_tags($form_state['values']['users']);
+  //printr($users);
+  $group = $form_state['values']['group'];
+  if (!empty($users)) {
+    foreach ($users as $username) {
+      $user = user_load_by_name($username);
+      //printr($user);
+      if ($user) {
+        if (!og_invite_is_group_member($group->gid, $user->uid)) {
+          $form_state['values']['users_to_add'][] = $user->uid;
+        }
+        else {
+          form_set_error('users', t('!username is already part of the group.', array('!username' => $username)));
+        }
+      }
+      else {
+        form_set_error('users', t('!username is not a valid user.', array('!username' => $username)));
+      }
+    }
+  }
+  //printr($form_state['values']['users_to_add']);
+}
+
+/********** Form submit functions **********/
+function og_admin_add_user_form_submit($form, &$form_state) {
+  $group = $form_state['values']['group'];
+  $users_to_add = $form_state['values']['users_to_add'];
+  //printr($users_to_add);
+  if (!empty($users_to_add)) {
+    foreach ($users_to_add as $uid) {
+      $user = user_load($uid);
+      og_group($group->gid, array('entity' => $user));
+      drupal_set_message(t('!username  was added to the group.', array('!username' => $user->name)));
+    }
+  }
+}

@@ -1,0 +1,5 @@
+name = Webform Weight
+description = Allows you to assign weights to webform components.
+core = 7.x
+version = 7.x-1.0-dev
+package = Webform

@@ -1,0 +1,333 @@
+<?php
+
+/** Implements hook_menu() **/
+function og_profile_menu() {
+  $menu = array();
+  
+  $menu['initiative/%node/me/prefs'] = array(
+    'title' => 'Preferences',
+    'description' => 'Group-level preferences',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_profile_prefs_form', 1),
+    'access callback' => 'og_profile_access',
+    'access arguments' => array(1),
+    'type' => MENU_LOCAL_TASK,
+  );
+  /*$menu['initiative/%node/me/derp'] = array(
+    'title' => 'Omg justin eid',
+    'page callback' => 'wut',
+    'access arguments' => array('access content'),
+    'type' => MENU_LOCAL_TASK,
+  );*/
+  
+  return $menu;
+}
+
+/** Define the form which lets the user select preferences from a particular group that they are a part of
+ *  The technique we shall use is to load the initaitive node completely, get rid of all non preference fields
+ *  and then load those fields with values retrieved from our steezy way of associating users with the DELTA
+ *  values of fields attached to the initiative.
+ */
+function og_profile_prefs_form($form, &$form_state, $node) {
+  global $user;
+  
+  $form['#nid'] = $node->nid;
+  field_attach_form('node', $node, $form, $form_state);
+  //printr($form);
+  og_profile_remove_non_prefs($form);
+  og_profile_set_defaults($form, $node, $user->uid);
+  
+  //printr($form);
+  
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+    '#weight' => 10000,
+  );
+  
+  return $form;
+}
+
+/** Get rid of fields which are not 'preference' or 'profile' fields.
+ *  Get yo terminology down, sahn.
+ */
+function og_profile_remove_non_prefs(&$form) {
+  $instances = field_info_instances('node', 'initiative');
+ // printr($instances);
+  foreach ($instances as $field_name => $instance) {
+    if (!helpers_is_a_group_profile_field($field_name)) {
+      //print $field_name;
+      unset($form[$field_name]);
+    }
+  }
+}
+
+/** Set the default values for the group preferences page.
+ *  For now let's assume that all fields are going to be single on off checkboxes.
+ */
+function og_profile_set_defaults(&$form, $node, $uid) {
+  $form['nid'] = array(
+    '#type' => 'value',
+    '#value' => $node->nid,
+  );
+  $form['uid'] = array(
+    '#type' => 'value',
+    '#value' => $uid,
+  );
+  $instances = field_info_instances('node', 'initiative');
+  //printr($node);
+  //printr($form);
+  //printr($instances);
+  foreach ($node as $field_name => $field) {
+    if (helpers_is_a_group_profile_field($field_name)) {
+      // lets find the delta value associated with this user
+      $value_key = $form[$field_name]['und']['#value_key'];
+      $delta = db_query("SELECT delta FROM {og_profile}
+                           WHERE field_name = :field_name AND uid = :uid AND nid = :nid",
+                           array(':field_name' => $field_name, ':uid' => $uid, ':nid' => $node->nid))->fetchField();
+      
+      if (is_numeric($delta)) {
+        //print $delta;
+        // if the record exists, we know that the field value has been saved for the node and that
+        // a record has been added to og_profile to keep track of which user corresponds to which delta
+        //printr($form);
+        $form[$field_name]['und']['#default_value'] = $node->{$field_name}['und'][$delta][$value_key];
+        $form[$field_name]['und']['#delta'] = $delta;
+      }
+      else {
+        //printr($form);
+        // we will retrieve the default value for this form field
+        $instance = $instances[$field_name];
+        //printr($instance);
+        $form[$field_name]['und']['#default_value'] = $instance['default_value'][0][$value_key];
+        //printr($instance);
+        // let's get the next delta value and assign that to the form
+        /*$delta = db_query("SELECT MAX(delta) + 1 FROM {field_data_$field_name}
+                           WHERE entity_type = 'node' AND entity_id = :node_id
+                             AND $field_name" . "_" . "$value_key" . " IS NOT NULL",
+                           array(':node_id' => $node->nid))->fetchField();
+        if (!$delta) {
+          $delta = 0;
+        }
+        print $delta;*/
+      }
+      // assign the delta value to the form to be used in the submit function
+      
+      /*$instance = $instances[$field_name];
+      printr($instance);
+      if (!empty($field)) {
+        // this field has been set before, see if there's a value for the user in question
+        
+        
+      } else {
+        // we gotta set a defaultzor
+        //print 'wut';
+        $field_key = helpers_get_field_key($field_name);
+        //print $field_key;
+        $default_value = $instance['default_value'][0][$field_key];
+        //print helpers_derp_default_value($field_name, $default_value);
+        $form[$field_name]['und'][0][$field_key]['#default_value'] = helpers_derp_default_value($field_name, $default_value);
+      }*/
+    }
+  }
+  //printr($form);
+}
+
+/** Implements hook_field_access()
+ *  I don't think we actually want to do anything here.
+ **/
+function og_profile_field_access($op, $field, $entity_type, $entity, $account) {
+  //print 'wut';
+
+  if ($entity_type == 'node') {
+    if (!empty($entity)) {
+      if ($entity->type == 'initiative') {
+        //return TRUE;
+      }
+    }
+    /*if (helpers_is_a_group_profile_field($field['field_name'])) {
+      if ($op == 'edit') {
+        $group = og_get_group('node', $entity->nid);
+        if (og_is_a_member($group->gid, 'user', $account)) {
+          return TRUE;
+        }
+      }
+    }*/
+  }
+}
+
+/** Access callback for the preferences page on inidividual initiatives.
+ *  All that is required is that the user be a member of the initiative.
+ **/
+function og_profile_access($node) {
+  $group = og_get_group('node', $node->nid);
+  return og_is_member($group->gid);
+}
+
+/** Get the fields which are considered 'preferences' **/
+function og_profile_prefs_list() {
+  $prefs = array();
+  $instances = field_info_instances('node', 'initiative');
+  foreach ($instances as $field_name => $instance) {
+    if (helpers_is_a_group_profile_field($field_name)) {
+      $prefs[$field_name] = $instance['label'];
+    }
+  }
+  
+  return $prefs;
+}
+
+/** Rules action which sends an email to all users who have a particular preference set **/
+function og_profile_action_mail_to_users_with_group_preference($group, $prefs, $subject, $message, $from) {
+  //printr($subject);
+  $users_to_mail = array();
+  foreach ($prefs as $pref => $label) {
+    $users_to_mail += og_profile_get_members_with_pref($group->gid, $pref);
+  }
+  if (!empty($users_to_mail)) {
+    $params = array(
+      'subject' => $subject,
+      'message' => $message,
+    );
+    foreach ($users_to_mail as $uid => $email) {
+      drupal_mail('og_profile', 'og_profile_send_to_users_with_group_preference', $email, language_default(), $params, $from);
+    }
+  }
+  //watchdog(print_r($users_to_mail, 1));
+  //printr($users_to_mail);
+}
+
+/** Retrieve all group members with a certain preference. The preference is the name of the field. **/
+function og_profile_get_members_with_pref($gid, $pref) {
+  
+  $node = og_load_entity_from_group($gid);
+  $value_key = helpers_get_field_key($pref);
+  $query = "SELECT ogp.uid, u.mail FROM {og_profile} ogp
+            LEFT JOIN {field_data_$pref} fd ON ogp.delta = fd.delta
+              AND ogp.nid = fd.entity_id
+            LEFT JOIN {users} u ON ogp.uid = u.uid
+            WHERE fd.$pref" . "_" . $value_key . " = 1
+              AND fd.entity_type = 'node'
+              AND fd.entity_id = :nid AND ogp.field_name = :pref";
+  $users = db_query($query, array(':nid' => $node->nid, ':pref' => $pref))->fetchAllKeyed();
+  
+  return $users;
+}
+
+/** Again, not really sure what's going on here. Drupal's mail system suxorz **/
+function og_profile_mail($key, &$message, $params) {
+  //printr($message);
+  if ($key == 'og_profile_send_to_users_with_group_preference') {
+    $message['subject'] = $params['subject'];
+    $message['body'][] = $params['message'];
+  }
+}
+
+/** Implements hook_node_insert() **/
+/** Basically we want to make it so that when a node is created, our preference fields don't get set anywhere.
+ *  They are special! **/
+function og_profile_node_presave($node) {
+  if ($node->type == 'initiative') {
+    // only act on newly created nodes
+    if (empty($node->nid)) {
+      foreach ($node as $field_name => $value) {
+        if (helpers_is_a_group_profile_field($field_name)) {
+          //printr('derp');
+          unset($node->{$field_name});
+        }
+      }
+    }
+  }
+}
+
+/** Implements hook_node_type_insert() **/
+function og_profile_node_type_insert($info) {
+  $bundle_name = $info->type;
+  //printr(variable_get('og_group_content_type_' . $bundle_name, 'omitted'));
+  if (variable_get('og_group_content_type_' . $bundle_name, 'omitted') == 'og_content') {
+    // create profile preference field
+    $field_info = field_info_field('field_ogp_notify_' . $bundle_name);
+    //printr($field_info);
+    if (empty($field_info)) {
+      $field = array(
+        'field_name' => 'field_ogp_notify_' . $bundle_name,
+        'type' => 'list_boolean',
+        //'default_widget' => 'options_onoff',
+      );
+      field_create_field($field);
+      $bundles = field_info_bundles('node');
+      $bundle = $bundles[$bundle_name];
+      $instance = array(
+        'field_name' => 'field_ogp_notify_' . $bundle_name,
+        'entity_type' => 'node',
+        'bundle' => 'initiative',
+        'label' => 'Notify me when a new ' . $bundle['label'] . ' is created',
+        //'und' => array(array('default_value' => 1)),
+        'default_value' => array(array('value' => 1)),
+        'widget' => array('type' => 'options_onoff', 'settings' => array('display_label' => TRUE)),
+      );
+      //printr(field_create_instance($instance));
+      // mark this as a special "ogp" field
+      og_settings_mark_as_special($instance['field_name'], 'initiative_setting_personal');
+      $groups = field_group_read_groups(array(
+        'name' => 'node',
+        'bundle' => 'initiative',
+        'view_mode' => 'full'));
+      //printr($groups);
+      //return;
+      $group = $groups['node']['initiative']['form']['group_ogp_notify_content_types'];
+      $group->children[] = $instance['field_name'];
+      field_group_group_save($group);
+    } 
+  };
+}
+
+/** Implements hook_node_type_update() **/
+function og_profile_node_type_update($info) {
+  //printr($info);
+  og_profile_node_type_insert($info);
+}
+
+/** Implements hook_node_type_delete() **/
+function og_profile_node_type_delete($info) {
+  field_delete_field('field_ogp_notify_' . $info->type);
+}
+
+
+/********** Form submit functions **********/
+
+function og_profile_prefs_form_submit($form, &$form_state) {
+  //printr($form);
+  printr($form_state['values']);
+  
+  $node = node_load($form_state['values']['nid']);
+  foreach ($form_state['values'] as $field_name => $value) {
+    if (helpers_is_a_group_profile_field($field_name)) {
+      //printr($field_name);
+      $value_key = $form[$field_name]['und']['#value_key'];
+      if (is_numeric($form[$field_name]['und']['#delta'])) {
+        $delta = $form[$field_name]['und']['#delta'];
+      }
+      else {
+        $delta = db_query("SELECT MAX(delta) + 1 FROM {field_data_$field_name}
+                           WHERE entity_type = 'node' AND entity_id = :node_id
+                             AND $field_name" . "_" . "$value_key" . " IS NOT NULL",
+                           array(':node_id' => $node->nid))->fetchField();
+        if (!is_numeric($delta)) {
+          $delta = 0;
+        }
+      }
+      //printr($delta);
+      // save the delta association
+      db_merge('og_profile')->key(array('field_name' => $field_name, 'nid' => $node->nid, 'delta' => $delta))
+                            ->fields(array('uid' => $form_state['values']['uid']))
+                            ->execute();
+                            
+      $field_key = helpers_get_field_key($field_name);
+      // save the field value
+      // the form does not respect delta values. we only get one and its delta is always 0
+      $node->{$field_name}['und'][$delta][$field_key] = $form_state['values'][$field_name]['und'][0][$field_key];
+    }
+  }
+  node_save($node);
+}

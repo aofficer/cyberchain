@@ -1,0 +1,7 @@
+name = Webform Benchmark
+description = Provides a benchmarking tool for surveys taken by users of the site.
+version = 7.x-1.0-dev
+core = 7.x
+package = Webform
+
+files[] = webform_benchmark_handler_field_has_submitted.inc

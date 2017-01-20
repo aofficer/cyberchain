@@ -1,0 +1,118 @@
+<?php
+
+function helpers_get_field_default_value($entity_type, $field_name, $bundle) {
+  $field = field_info_instance($entity_type, $field_name, $bundle);
+  switch ($field['widget']['type']) {
+    case 'image_image':
+      return $field['settings']['default_image'];
+      break;
+    default:
+      return $field['default_value'][0]['value'];
+  }
+  
+  //drupal_set_message(printr($field));
+}
+
+function helpers_og_count_members($gid) {
+  $query = "SELECT COUNT(ogm.etid) FROM {og_membership} ogm
+            LEFT JOIN {users} u ON ogm.etid = u.uid
+            WHERE ogm.gid = :gid
+              AND ogm.entity_type = :entity_type
+              AND u.status = 1";
+  $count = db_query($query, array(':gid' => $gid, ':entity_type' => 'user'))->fetchField();
+  
+  return $count;
+}
+
+function helpers_og_count_node_type($gid, $node_type) {
+  $query = "SELECT COUNT(n.nid) FROM {node} n
+            LEFT JOIN {og_membership} ogm ON n.nid = ogm.etid
+            WHERE n.type = :node_type
+              AND ogm.gid = :gid
+              AND ogm.entity_type = 'node'";
+  $count = db_query($query, array(':node_type' => $node_type, ':gid' => $gid))->fetchField();
+  
+  return $count;
+}
+
+function helpers_get_initiative_audience_bundles() {
+  $query = "SELECT DISTINCT(nga.type) FROM {node} ng
+            LEFT JOIN {og} og ON ng.nid = og.etid
+            LEFT JOIN {og_membership} ogm ON og.gid = ogm.gid
+            LEFT JOIN {node} nga ON nga.nid = ogm.etid
+            WHERE ng.type = 'initiative' AND og.entity_type = 'node' AND ogm.entity_type = 'node'
+              AND og.state = 1 AND ogm.state = 1";
+  $result = db_query($query);
+  return $result->fetchCol();
+}
+
+function helpers_arg_to_content_type_map($arg) {
+  $map = array(
+    'polls' => 'poll',
+    'surveys' => 'webform',
+    'reports' => 'report',
+  );
+  
+  return isset($map[$arg]) ? $map[$arg] : $arg;
+}
+
+function helpers_content_type_to_title_map($content_type) {
+  $map = array(
+    'event' => t('Event'),
+  );
+  
+  return isset($map[$content_type]) ? $map[$content_type] : $content_type;
+}
+
+function helpers_get_field_key($field_name) {
+  switch ($field_name) {
+    case 'field_settings_initiative_leader':
+      return 'target_id';
+      break;
+    default:
+      return 'value';
+  }
+}
+
+function helpers_derp_default_value($field_name, $value) {
+  switch ($field_name) {
+    case 'field_settings_initiative_leader':
+      $user = user_load($value);
+      return $user->name . ' (' . $user->uid . ')';
+      break;
+    default:
+      return $value;
+  }
+}
+
+function helpers_is_a_setting($field_name) {
+  $special_field_types_map = variable_get('special_field_types_map', array());
+  if (isset($special_field_types_map[$field_name])) {
+    if ($special_field_types_map[$field_name] == 'initiative_setting_global') {
+      return TRUE;
+    }
+  }
+  /*if (substr($field_name, 0, 14) == 'field_settings') {
+    return TRUE;
+  }*/
+  
+  return FALSE;
+}
+
+function helpers_is_a_group_profile_field($field_name) {
+  $special_field_types_map = variable_get('special_field_types_map', array());
+  if (isset($special_field_types_map[$field_name])) {
+    if ($special_field_types_map[$field_name] == 'initiative_setting_personal') {
+      return TRUE;
+    }
+  }
+  /*if (substr($field_name, 0, 10) == 'field_ogp_') {
+    return TRUE;
+  }*/
+  
+  return FALSE;
+}
+
+function printr($array) {
+  drupal_set_message('<pre>' . print_r($array, 1) . '</pre>');
+}

@@ -1,0 +1,13 @@
+<?php
+
+/**
+ * Implements hook_search_api_service_info().
+ */
+function search_api_mongodb_search_api_service_info() {
+  $services['search_api_mongo_service'] = array(
+    'name' => t('MongoDB service'),
+    'description' => t('Index using MongoDB for fast searching.'),
+    'class' => 'SearchApiMongoDBService',
+  );
+  return $services;
+}

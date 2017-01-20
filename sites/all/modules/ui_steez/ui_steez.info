@@ -1,0 +1,5 @@
+name = UI Steez
+description = Steez up the user interface.
+core = "7.x"
+version = "7.x-1.0-dev"
+package = Steez

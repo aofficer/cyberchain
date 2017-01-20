@@ -1,0 +1,339 @@
+@import url(http://fonts.googleapis.com/css?family=Dosis:400,500,600,700);
+
+/*
+Note: Overrides for new blue-green theme at bottom 
+*/
+
+body {
+  background-color: #ffffff;
+  color: #333333;
+}
+
+.form-submit {
+  background-color: #eeeeee;
+  color: #000000;
+}
+
+.site-slogan {
+  color: #666666;
+}
+
+.wrapper-footer {
+  border-color: #333333;
+}
+
+.stack-preheader {
+  border-color: #333333;
+}
+
+.stack-content-inner {
+  border-color: #333333;
+}
+
+.stack-copyright .inner {
+  border-color: #333333;
+}
+
+.menu li li {
+}
+
+.stack-navigation .menu li a {
+  color: #ffffff;
+}
+
+table {
+}
+
+thead th {
+  border-bottom-color: #ffffff;
+}
+
+tfoot td {
+}
+
+td {
+}
+
+.node .meta {
+}
+
+.menu-dropdown .menu .menu a {
+  border-color: #ffffff;
+}
+
+#block-feedback-feedback a {
+  background-color: #ff7800;
+  color: #ffffff;
+  border-color: #ffffff;
+}
+
+.rotating-banner .rb-slides {
+  border-color: #dddddd;
+}
+
+.stack-navigation .menu {
+  background-color: #333333;
+}
+
+.controls.buttons a.activeSlide {
+  background-color: #ff7800;
+}
+
+#block-feedback-feedback a:hover {
+  background-color: #666666;
+}
+
+.form-submit + input {
+  background-color: #ffffff;
+}
+
+.menu-dropdown .menu .menu {
+}
+
+a {
+  color: #ff7800;
+}
+
+li a.active {
+  color: #ff7800;
+}
+
+.site-name a {
+  color: #ff7800;
+}
+
+.page-forum h1 {
+  color: #ff7800;
+}
+
+.messages {
+  color: #000000;
+}
+
+.messages ul {
+  color: #000000;
+}
+
+.messages ul li {
+  color: #000000;
+}
+
+.wrapper-header .active-trail a {
+  color: #000000;
+}
+
+.messages a {
+  color: #333333;
+}
+
+h1 {
+  color: #333333;
+}
+
+h2 {
+  color: #333333;
+}
+
+h3 {
+  color: #333333;
+}
+
+h4 {
+  color: #333333;
+}
+
+h5 {
+  color: #333333;
+}
+
+h6 {
+  color: #333333;
+}
+
+.forum a {
+  color: #333333;
+}
+
+#forum table thead tr th {
+  color: #333333;
+}
+
+#forum table thead tr th a {
+  color: #333333;
+}
+
+.rotating-banner {
+  color: #333333;
+}
+
+.rotating-banner a {
+  color: #333333;
+}
+
+h2 a {
+  color: #666666;
+}
+
+a:hover {
+  color: #666666;
+}
+
+h2 a:hover {
+  color: #999999;
+}
+
+.forum .description {
+  color: #999999;
+}
+
+.menu-dropdown .menu .expanded:hover > a {
+  background-color: #666666;
+}
+
+.menu-dropdown .menu .active-trail:hover > a {
+  background-color: #666666;
+}
+
+.stack-navigation .menu li a:hover {
+  background-color: #666666;
+}
+
+.stack-navigation .menu .active-trail > a {
+}
+
+.sidebar .block,.block-aggregator ul li + li {
+  border-color: #eeeeee;
+}
+
+.comment {
+  border-top-color: #999999;
+}
+
+.comment-wrapper h2 {
+  border-top-color: #999999;
+}
+
+.sidebar.left {
+  border-right-color: #999999;
+}
+
+.sidebar.right {
+  border-left-color: #999999;
+}
+
+.breadcrumb a {
+}
+
+th {
+}
+
+.forum thead th {
+}
+
+th.active {
+}
+
+tr.even td {
+  background-color: #f9f9f9;
+}
+
+table tbody tr.even td.active {
+  background-color: #000000;
+}
+
+table tbody tr.odd td.active {
+  background-color: #000000;
+}
+
+
+
+
+/************************************************************************
+OVERRIDES FOR NEW BLUE-GREEN THEME
+************************************************************************/
+
+body {font-family:Dosis;font-weight:400;font-size:15px;color:#727284;}
+
+/* top left user content when logged in */
+.block-kewlogin {color:#C1C1C7;}
+.logged-in .block-kewlogin .content {padding-top:27px;}
+.block-kewlogin a {color:#C4C0FF;}
+
+/* top right u/p login area */
+div#block-kewlogin-kewlogin {width:450px;margin-top:11px;}
+#user-login {font:400 13px/15px Dosis;color:#D5D5DB;float:right;margin-top:7px;}
+#user-login label {font-weight:400;}
+#user-login .form-required {display:none;}
+#user-login .element-invisible {display:inline;position:relative !important;}
+#user-login .form-item-name, #user-login .form-item-pass, #user-login .form-actions {float:left;}
+#user-login .form-text {margin: 0 10px 0 2px;border: 1px solid #D7D7DD;padding: 3px;font-size: 12px;width: 94px;}
+#user-login .form-actions .form-submit {background:#fff;color:#D7D7DD;border:1px solid #D7D7DD;border-radius:20px;padding:2px 20px;text-transform:uppercase;}
+
+/* header */
+#header-inner .col-c {width:350px;float:left;}
+.stack-preheader {border-color:#00F931;padding:0;height:55px;}
+.stack-header-inner {/*margin:21px 0 14px 0;*/height:102px;margin:0;}
+.site-name {height:100px;width:350px;background:url(/sites/default/files/logo_hdr.png) no-repeat 3px 15px;text-indent:-9999em;}
+
+#header-inner #block-blog-recent {width:425px;margin-top:15px;}
+#header-inner #block-blog-recent h2 {display:none;/*font-size:20px;color:#7159FD;font-weight:400;line-height:20px;margin:0;*/}
+#header-inner #block-blog-recent {font-size:13px;line-height:15px;}
+#header-inner #block-blog-recent .item-list ul {padding:5px 0 0 0;}
+#header-inner #block-blog-recent .item-list ul li.first {font-size:20px;color:#7159FD;font-weight:400;line-height:20px;}
+#header-inner #block-blog-recent a {color:#7159FD;}
+#header-inner #block-blog-recent .more-link {text-align:left;}
+
+
+/* top navbar */
+.stack-navigation {margin:0;}
+.stack-navigation .menu {background-color:#fff;border-top:1px solid #00F931;border-bottom:1px solid #00F931;}
+.stack-navigation .menu li a {color:#7159FD;padding:5px 12px;}
+.stack-navigation .menu li a:hover {color:#fff;background:#7159FD;}
+
+.wrapper-header {padding:0;margin-bottom:25px;}
+
+/* homepage banners */
+.wrapper-content .stack {padding-top:0;}
+#banner-region {border:1px solid #7159FD;padding:15px;}
+.rotating-banner .rb-slides {border:0;}
+/* .layout-wrapper .top-left {margin:105px 0 0 0;width:460px;height:70px;padding:15px;background:url(/sites/default/files/bg-banner-text.png);} */
+.rb-textbox-type-header {font-size:20px;color:#7159FD;font-weight:400;}
+.rb-textbox-type-text {font-size:13px;color:#646472;}
+
+.rb-textbox {background:#fff;margin:-15px 0 15px -15px;width:440px;background:url(/sites/default/files/bg-banner-text.png);}
+
+.rb-textbox-type-header .rb-textbox {padding:10px 10px 0 10px;}
+.rb-textbox-type-text .rb-textbox {padding:0 10px 10px 10px;}
+
+
+/* content area */
+.stack .box {padding:0;}
+.wrapper-content {padding-bottom:25px;}
+.wrapper-content .stack-content-inner {padding:0;}
+.stack-content-inner {border:0;margin:0;}
+
+/* footer */
+.wrapper-footer {border-top:2px solid #00F931;margin:0;}
+.wrapper-footer .stack {padding:0;}
+
+#prefooter .block-menu h2 {display:none;}
+#prefooter .block-menu ul li {float:left;}
+#prefooter .block-menu ul li a {color:#646473;padding:5px 12px;font-size:13px;}
+#prefooter .block-menu ul li a:hover {color:#FF5D14;}
+
+.block-footer-message {color:#FF5D14;text-align:center;}
+
+/* New CSS for Homepage - 3 info box layout */
+.top-news-box {width:425px;float:right;margin-top:-4px;}
+.top-news-box-hdr {font-size:20px;color:#7159FD;font-weight:400;line-height:20px;margin:0;}
+.top-news-box-text {font-size:13px;line-height:15px;}
+
+.take-assessment {text-align:center;margin-bottom:20px;}
+.take-assessment a {background:#FF5B29;text-transform:uppercase;color:#fff;font:400 15px/15px Dosis;letter-spacing:1px;padding:7px 20px;border-radius:15px;display:inline-block;}
+.take-assessment a:hover {text-decoration:none;background:#7159FD;}
+
+#home-info-boxes {margin-bottom:25px;font:400 13px/15px Dosis;}
+#home-info-boxes p {margin:10px 0 0 0;}
+#home-info-boxes .box-1, #home-info-boxes .box-2, #home-info-boxes .box-3 {float:left;border:1px solid #7A4DFF;width:268px;height:172px;padding:14px;}
+#home-info-boxes .box-2 {margin:0 32px;}
+

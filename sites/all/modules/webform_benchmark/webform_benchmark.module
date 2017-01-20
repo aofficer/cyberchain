@@ -1,0 +1,2480 @@
+<?php
+
+//DEFINE('RESPONDENT_CIDS', array(1, 2, 3, 4, 5, 6, 7, 8, 9));
+
+/** Implements hook_ctools_plugin_directory **/
+function webform_benchmark_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'ctools' && !empty($plugin)) {
+    return "plugins/$plugin";
+  }
+}
+ 
+/**
+ * Implements hook_menu().
+ */
+function webform_benchmark_menu() {
+  $menu = array();
+  
+  $menu['webform-benchmark/%webform_menu'] = array(
+    'title' => 'Benchmark',
+    'title callback' => 'webform_benchmark_title',
+    'title arguments' => array(1),
+    'description' => 'Perform a benchmark against an established webform',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('webform_benchmark_benchmark', 1),
+    'access arguments' => array('benchmark surveys'),
+    'type' => MENU_CALLBACK,
+  );
+  $menu['admin/config/content/webform-benchmark'] = array(
+    'title' => 'Webform Benchmark settings',
+    'description' => 'Settings page for benchmarking yo webforms.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('webform_benchmark_settings_form'),
+    'access arguments' => array('administer webform_benchmark'),
+  );
+  
+  $menu['admin/reports/benchmark'] = array(
+    'title' => 'Assessment Benchmark Report',
+    'description' => 'Report on all scores for exec function and community framework.',
+    'page callback' => 'webform_benchmark_report',
+    'access arguments' => array('administer site configuration'),
+  );
+
+  $menu['admin/reports/benchmark/csv'] = array(
+    'title' => 'Assessment Benchmark Report (CSV File)',
+    'description' => 'Report on all scores for exec function and community framework as CSV file',
+    'page callback' => 'webform_benchmark_report_csv',
+    'access arguments' => array('administer site configuration'),
+  );
+
+  return $menu;
+}
+
+function webform_benchmark_report()
+{
+  $query = db_select('webform_submissions', 'ws');
+  $query->addField('ws', 'uid');
+  $exec = array();
+  $tier = array();
+  $query->condition('ws.nid', 144);
+  $results = $query->execute()->fetchCol();
+  foreach ($results as $uid) {
+    $exec[] = webform_benchmark_get_president_initiative_score_2($uid);
+    $tier[] = webform_benchmark_get_community_framework_score_2($uid);
+  }
+
+  $content['raw_markup'] = array(
+    '#type' => 'markup',
+    '#markup' => theme('webform_benchmark_results', array('userids' => $results, 'exec' => $exec, 'tier' => $tier)),
+
+    );
+  return $content;
+}
+
+function webform_benchmark_report_csv()
+{
+  // send response headers to the browser
+  drupal_add_http_header('Content-Type', 'text/csv');
+  drupal_add_http_header('Content-Disposition', 'attachment;filename=AssessmentBenchmarkReport.csv');
+  $fp = fopen('php://output', 'w');
+
+  $headers = array('User','Identify','Protect','Detect','Respond','Recover','Tier 1','Tier 2','Tier 3');
+  fputcsv($fp, $headers);
+  $query = db_select('webform_submissions', 'ws');
+  $query->addField('ws', 'uid');
+  $exec = array();
+  $tier = array();
+  $query->condition('ws.nid', 144);
+  $results = $query->execute()->fetchCol();
+  foreach ($results as $uid) {
+    $line = array();
+    $line[] = $uid;
+    $points = webform_benchmark_get_president_initiative_score_2($uid);
+    foreach($points as $pt) {
+      $line[] = $pt;
+    }
+    $points = webform_benchmark_get_community_framework_score_2($uid);
+    for ($i=1; $i<=3; $i++) {
+      $line[] = $points[$i];
+
+    }
+    fputcsv($fp, $line);
+  }
+
+  fclose($fp);
+  drupal_exit();
+
+}
+
+function webform_benchmark_benchmark($form, &$form_state, $node) {
+  $industry_type_field_name = variable_get('webform_benchmark_industry_type_field', '');
+  $industry_type_options = webform_benchmark_get_field_options($industry_type_field_name);
+  array_unshift($industry_type_options, '');
+  $form['industry_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Industry type'),
+    '#options' => $industry_type_options,
+  );
+  
+  $industry_size_field_name = variable_get('webform_benchmark_industry_size_field', '');
+  $industry_size_options = webform_benchmark_get_field_options($industry_size_field_name);
+  array_unshift($industry_size_options, '');
+  $form['industry_size'] = array(
+    '#type' => 'select',
+    '#title' => t('Industry size'),
+    '#options' => $industry_size_options,
+  );
+  
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Benchmark!'),
+  );
+  
+  return $form;
+}
+
+function webform_benchmark_settings_form($form, &$form_state) {
+  $instances = field_info_instances('profile2', 'basics');
+  $fields = array();
+  foreach ($instances as $field_name => $field) {
+    $fields[$field_name] = $field['label'];
+  }
+  
+  //printr($instances);
+  $form['webform_benchmark_industry_type_field'] = array(
+    '#type' => 'select',
+    '#title' => t('Industry type field'),
+    '#description' => t('Select the field to use to benchmark against industry type.'),
+    '#options' => $fields,
+    '#default_value' => variable_get('webform_benchmark_industry_type_field', ''),
+    );
+  $form['webform_benchmark_industry_size_field'] = array(
+    '#type' => 'select',
+    '#title' => t('Industry size field'),
+    '#description' => t('Select the field to use to benchmark against industry size.'),
+    '#options' => $fields,
+    '#default_value' => variable_get('webform_benchmark_industry_size_field', ''),
+    );
+  $profile_types = field_info_bundles('profile2');
+  $types = array();
+  foreach ($profile_types as $name => $type) {
+    $types[$name] = $type['label'];
+  }
+  $form['webform_benchmark_profile_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Profile type'),
+    '#description' => t('Select the profile type where these fields are stored.'),
+    '#options' => $types,
+    '#default_value' => variable_get('webform_benchmark_profile_type', ''),
+    );
+  
+  return system_settings_form($form);
+}
+
+function webform_benchmark_get_field_options($field_name) {
+  $options = array();
+  if ($field_name) {
+    $field = field_info_field($field_name);
+    $options = taxonomy_allowed_values($field);
+  }
+  
+  return $options;
+}
+
+function webform_benchmark_title($node) {
+  return t('Benchmark against survey !title', array('!title' => $node->title));
+}
+
+function webform_benchmark_benchmark_results($survey, $uid, $options = array()) {
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE sid = :sid",
+                    array(':sid' => $survey));
+  // first grab all the components associated with this survey
+}
+
+function webform_benchmark_theme() {
+  return array(
+    'survey_benchmark_results' => array(
+      'variables' => array(
+        'results' => NULL,
+        'components' => NULL,
+      ),
+      'template' => 'survey-benchmark-results',
+    ),
+    'willis_benchmark' => array(
+      'variables' => array(
+        'fortune1000' => NULL, 'industry' => NULL, 'my_responses' => NULL
+      ),
+      'template' => 'willis-benchmark',
+    ),
+    'capability_score_benchmark' => array(
+      'variables' => array(
+        'components' => NULL, 'popular' => NULL, 'my_responses' => NULL, 'points' => NULL, 'total_score' => NULL,
+      ),
+      'template' => 'capability-score-benchmark',
+    ),
+    'president_score_benchmark' => array(
+      'variables' => array(
+        'components' => NULL, 'popular' => NULL, 'my_responses' => NULL, 'points' => NULL, 'total_score' => NULL,
+      ),
+      'template' => 'president-score-benchmark',
+    ),
+    'individual_score_benchmark' => array(
+      'variables' => array(
+        'my_results' => NULL, 'counts' => NULL, 'key_label' => NULL,
+      ),
+      'template' => 'individual-score-benchmark',
+    ),
+    'peer_benchmark_overview' => array(
+      'variables' => array(),
+      'template' => 'peer-benchmark-overview',
+    ),
+    'webform_benchmark_results' => array(
+      'variables' => array(),
+      'template' => 'webform-benchmark-results',
+    ),
+  );
+}
+
+function webform_benchmark_preprocess_peer_benchmark_overview(&$vars) {
+  //$nids = array(144, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125);
+  $nids = array(531, 532, 533, 534, 535, 536, 537, 538, 539, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550, 551, 552);
+  foreach ($nids as $nid) {
+    $node = node_load($nid);
+    
+  }
+}
+
+/*function theme_survey_benchmark_results($survey) {
+  //printr($survey);
+  return 'eehhhhhhhh';
+}*/
+
+function webform_benchmark_preprocess_survey_benchmark_results(&$vars) {
+  //printr($vars);
+  $vars['stats'] = array();
+  $vars['stats_lists'] = array();
+  $vars['charts'] = array();
+  //printr($vars);
+  if (!empty($vars['results'])) {
+    $vars['cscore'] = webform_benchmark_get_capability_score($vars['sid']);;
+    foreach ($vars['results'] as $cid => $result) {
+      if (!empty($result)) {
+        $chart = array();
+        $component = $vars['components'][$cid];
+      
+        $chart['#chart_id'] = $cid;
+        $chart['#title'] = $component->name;
+        $chart['#type'] = CHART_TYPE_PIE;
+        $chart['#size'] = array('#width' => 1200, '#height' => 900);
+        //printr($component);
+        //return;
+        //printr($vars['components'][$cid]);
+        //return;
+        $frequencies = array_count_values($result);
+        //$frequencies['harp'] = 1;
+      
+        foreach($frequencies as $id => $count) {
+          $chart['#labels'][$id] = $id;
+        }
+        //printr($frequencies);
+        $chart['#data'] = $frequencies;
+        $vars['charts'][$cid] = theme('chart', array('chart' => $chart));
+      
+        $vars['stats_lists'][$cid]['title'] = $vars['components'][$cid]->name;
+        // lets calculate a mode for every field regardless of type
+      
+        $vars['stats'][$cid]['mode'] = array_keys($frequencies, max($frequencies));
+        $vars['stats_lists'][$cid]['data'][] = t('Most frequent response: !mode (!num)', 
+                                                  array('!mode' => $vars['stats'][$cid]['mode'][0],
+                                                        '!num' => $frequencies[$vars['stats'][$cid]['mode'][0]]));
+        $vars['stats'][$cid]['num_responses'] = count($result);
+        $vars['stats_lists'][$cid]['data'][] = t('Total responses: !num_responses',
+                                                  array('!num_responses' => $vars['stats'][$cid]['num_responses']));
+        if ($component->type == 'number') {
+          // for numeric fields we calculate a mean, min, and max as well
+          $vars['stats'][$cid]['min'] = min($result);
+          $vars['stats_lists'][$cid]['data'][] = t('Min: !min', array('!min' => $vars['stats'][$cid]['min']));
+          $vars['stats'][$cid]['max'] = max($result);
+          $vars['stats_lists'][$cid]['data'][] = t('Max: !max', array('!max' => $vars['stats'][$cid]['max']));
+          $vars['stats'][$cid]['avg'] = array_sum($result)/count($result);
+          $vars['stats_lists'][$cid]['data'][] = t('Average: !avg', array('!avg' => $vars['stats'][$cid]['avg']));
+        }
+      }
+    }
+  }
+}
+
+function webform_benchmark_preprocess_capability_score_benchmark(&$vars) {
+  //printr($vars);
+  $vars['stats'] = array();
+  $vars['stats_lists'] = array();
+  $vars['charts'] = array();
+  //printr($vars);
+  if (!empty($vars['results'])) {
+    $vars['cscore'] = webform_benchmark_get_capability_score($vars['sid']);;
+    foreach ($vars['results'] as $cid => $result) {
+      if (!empty($result)) {
+/*        $chart = array();
+        $component = $vars['components'][$cid];
+      
+        $chart['#chart_id'] = $cid;
+        $chart['#title'] = $component->name;
+        $chart['#type'] = CHART_TYPE_PIE;
+        $chart['#size'] = array('#width' => 1200, '#height' => 900);
+        $frequencies = array_count_values($result);
+
+        foreach($frequencies as $id => $count) {
+          $chart['#labels'][$id] = $id;
+        }
+        
+        $chart['#data'] = $frequencies;
+        $vars['charts'][$cid] = theme('chart', array('chart' => $chart));*/
+      
+        $vars['stats_lists'][$cid]['title'] = $vars['components'][$cid]->name;
+        // lets calculate a mode for every field regardless of type
+      
+        $vars['stats'][$cid]['mode'] = array_keys($frequencies, max($frequencies));
+        $vars['stats_lists'][$cid]['data'][] = t('Most frequent response: !mode (!num)', 
+                                                  array('!mode' => $vars['stats'][$cid]['mode'][0],
+                                                        '!num' => $frequencies[$vars['stats'][$cid]['mode'][0]]));
+        $vars['stats'][$cid]['num_responses'] = count($result);
+        $vars['stats_lists'][$cid]['data'][] = t('Total responses: !num_responses',
+                                                  array('!num_responses' => $vars['stats'][$cid]['num_responses']));
+        if ($component->type == 'number') {
+          // for numeric fields we calculate a mean, min, and max as well
+          $vars['stats'][$cid]['min'] = min($result);
+          $vars['stats_lists'][$cid]['data'][] = t('Min: !min', array('!min' => $vars['stats'][$cid]['min']));
+          $vars['stats'][$cid]['max'] = max($result);
+          $vars['stats_lists'][$cid]['data'][] = t('Max: !max', array('!max' => $vars['stats'][$cid]['max']));
+          $vars['stats'][$cid]['avg'] = array_sum($result)/count($result);
+          $vars['stats_lists'][$cid]['data'][] = t('Average: !avg', array('!avg' => $vars['stats'][$cid]['avg']));
+        }
+      }
+    }
+  }
+}
+
+function webform_benchmark_get_users_by_profile_values($values, $exclude_uid = 0) {
+  $query = db_select('profile', 'p');
+  $query->addField('p', 'uid');
+  //$query->join('field_data_' . $field_name, 'fd', 'fd.entity_id = p.pid');
+  //$query->condition('fd.entity_type', 'profile2');
+  foreach ($values as $field_name => $value) {
+    $query->join('field_data_' . $field_name, $field_name, "$field_name.entity_id = p.pid");
+    $query->condition("$field_name.entity_type", 'profile2');
+    $query->condition("$field_name.$field_name" . "_tid", $value);
+  }
+  if ($exclude_uid) {
+    $query->condition('p.uid', $exclude_uid, '<>');
+  }
+  /*$query = "SELECT p.uid FROM {profile} p
+            LEFT JOIN {field_data_$fieldname} fd
+              ON fd.entity_id = p.pid
+            WHERE fd.entity_type = 'profile2'
+              AND $field_name" . "_tid = :tid";*/
+  //$result = db_query($query, array(':tid' => $tid))->fetchCol();
+  $result = $query->execute();
+  $uids = $result->fetchCol();
+  
+  return $uids;
+}
+
+function webform_benchmark_get_users_by_survey_results($nid, $values, $exclude_uid = 0) {
+  global $user;
+  
+  if (!$exclude_uid) {
+    $exclude_uid = $user->uid;
+  }
+  
+  if (!empty($values)) {
+    $query = db_select('webform_submissions', 'ws');
+    $query->join('webform_submitted_data', 'wsd', 'ws.sid = wsd.sid');
+    $query->addField('ws', 'uid');
+    $query->fields('wsd', array('cid', 'data'));
+    $query->condition('wsd.nid', $nid);
+    $query->condition('wsd.cid', array_keys($values), 'IN');
+    $query->condition('ws.uid', $exclude_uid, '<>');
+    $results = $query->execute()->fetchAll();
+    dprintr($results);
+    $user_results = array();
+    if (!empty($results)) {
+      foreach ($results as $result) {
+        $user_results[$result->uid][$result->cid] = $result->data;
+      }
+    }
+    $uids_to_benchmark = array();
+    foreach ($user_results as $uid => $results) {
+      if ($results === $values) {
+        $uids_to_benchmark[] = $uid;
+      }
+    }
+    
+    return $uids_to_benchmark;
+    
+    //$result = $query->fetchAllAssoc('ws.uid');
+    //$query = "SELECT uid, cid, data FROM {webform_submitted_data} WHERE sid = :sid";
+    //$result = db_query($query, array(':sid' => $sid))->fetchAllAssoc();
+    //printr($user_results);
+  }
+}
+
+function webform_benchmark_get_component_values($sid, $components, $uid = 0) {
+  global $user;
+  
+  if (!$uid) {
+    $uid = $user->uid;
+  }
+  
+  if (!empty($components)) {
+    //module_load_include('inc', 'webform', 'includes/webform.submissions');
+    foreach ($components as $nid => $cids) {
+      if (!empty($cids)) {
+        /*$sid = db_query("SELECT sid FROM {webform_submissions} WHERE uid = :uid AND nid = :nid",
+                         array(':uid' => $uid, ':nid' => $nid));*/
+        if ($sid) {
+          $submission_data = db_query("SELECT cid, data FROM {webform_submitted_data}
+                                       WHERE sid = :sid AND cid IN (:cids)", array(':sid' => $sid,
+                                                                                   ':cids' => $cids))->fetchAllKeyed();
+          if (!empty($submission_data)) {
+            return $submission_data;
+          }
+        }
+      }
+    }
+  }
+  
+  return FALSE;
+}
+
+// Define the form to benchmark against different industry sizes and types
+function webform_benchmark_industry_options_form($form, &$form_state) {
+  global $user;
+  
+  drupal_add_css('div.form-item-industry-type, div.form-item-industry-size {display:inline-block;}', array('type' => 'inline'));
+  
+  $path = arg();
+  unset($path[count($path) - 1]);
+  unset($path[count($path) - 1]);
+  $form['back_link'] = array(
+    '#type' => 'item',
+    '#markup' => l(t('<< Back to surveys'), implode('/', $path)),
+  );
+  
+  if (!isset($_GET['industry_type']) && !isset($_GET['industry_size'])) {
+    $profile_type = variable_get('webform_benchmark_profile_type', '');
+    $profile = profile2_load_by_user($user, $profile_type);
+  
+    $industry_type_field = variable_get('webform_benchmark_industry_type_field', '');
+    $industry_size_field = variable_get('webform_benchmark_industry_size_field', '');
+   
+    $industry_type_tid = $profile->{$industry_type_field}['und'][0]['tid'];
+    $industry_type_term = taxonomy_term_load($industry_type_tid);
+    $industry_type_name = $industry_type_term->name;
+    
+    $industry_size_tid = $profile->{$industry_size_field}['und'][0]['tid'];
+    $industry_size_term = taxonomy_term_load($industry_size_tid);
+    $industry_size_name = $industry_size_term->name;
+    
+    $form['message'] = array(
+      '#type' => 'item',
+      '#markup' => t("You're currently benchmarking against your own industry type (!industry_type_name)
+                      and industry size (!industry_size_name). You can optionally select other industry
+                      types and sizes to benchmark against.", array('!industry_type_name' => $industry_type_name,
+                                                                    '!industry_size_name' => $industry_size_name)),
+    );
+  }
+  $types_field = field_info_field('field_basics_industry_type');
+  $types = array('');
+  $types += taxonomy_allowed_values($types_field);
+  //$types[0] = '';
+  //printr($types);
+  $form['industry_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Industry type'),
+    '#options' => $types,
+    '#default_value' => isset($_GET['industry_type']) ? $_GET['industry_type'] : 0,
+  );
+  $sizes_field = field_info_field('field_basics_industry_size');
+  $sizes = array('');
+  $sizes += taxonomy_allowed_values($sizes_field);
+  $form['industry_size'] = array(
+    '#type' => 'select',
+    '#title' => t('Industry size'),
+    '#options' => $sizes,
+    '#default_value' => isset($_GET['industry_type']) ? $_GET['industry_size'] : 0,
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Benchmark'),
+  );
+  
+  return $form;
+}
+
+function webform_benchmark_industry_options_form_submit($form, &$form_state) {
+  $form_state['redirect'] = array($_GET['q'], array('query' => array('industry_type' => $form_state['values']['industry_type'],
+                                                                     'industry_size' => $form_state['values']['industry_size'])));
+}
+
+/** $sid = submission ID **/
+function webform_benchmark_get_capability_score($sid, $uid = 0) {
+  $respondent_nid = 111;
+  $respondent_cids = array(1,2,3,4,5,6,7,8,9);
+  global $user;
+  
+  if (!$uid) {
+    $uid = $user->uid;
+  }
+
+  $query = "SELECT nid FROM {webform_submissions} WHERE sid = :sid";
+  $nid = db_query($query, array(':sid' => $sid))->fetchField();
+  if ($nid) {
+    $query = "SELECT cid FROM {webform_component} WHERE nid = :nid";
+    $cids = db_query($query, array(':nid' => $nid))->fetchCol();
+    
+    // first we get the user's own responses
+    $responses_to_compare = webform_benchmark_get_responses($nid, $sid, $cids);
+    //printr($responses_to_compare);
+    
+    // then we get users who share the same respondent profile
+    $respondent_profile_sid = db_query("SELECT sid FROM {webform_submissions}
+                                        WHERE nid = :nid AND uid = :uid", array(':nid' => $respondent_nid, ':uid' => $uid))->fetchField();
+    $respondent_profile_values = webform_benchmark_get_responses($respondent_nid, $respondent_profile_sid, $respondent_cids);
+    $respondent_profile_buddies = webform_benchmark_get_users_by_survey_results($respondent_nid, $respondent_profile_values);
+    
+    // and we get the most popular responses of those who share the same respondent profile
+    $most_popular_responses = array();
+    if (!empty($cids)) {
+      foreach ($cids as $cid) {
+        $most_popular_responses[$cid] = webform_benchmark_get_most_popular_response($nid, $cid, $respondent_profile_buddies);
+      }
+    }
+
+    // and tally up le points
+    $total_points = 0;
+    $possible_points = 0;
+    foreach ($responses_to_compare as $cid => $response) {
+      //printr($response);
+      if ($response) {
+        $points = webform_weight_get_points($nid, $cid);
+        $possible_points += $points;
+        $tier = community_framework_get_tier($nid, $cid);
+        if (!isset($tiers[$tier]['total'])) { $tiers[$tier]['total'] = 0; }
+        if (!isset($tiers[$tier]['possible'])) { $tiers[$tier]['possible'] = 0; }
+        $tiers[$tier]['possible'] += $points; 
+        if ($response == $most_popular_responses[$cid]) {
+          $total_points += $points;
+          $tiers[$tier]['total'] += $points; 
+        }
+      }
+    }
+  }
+
+  $rc = array('possible' => $possible_points, 'total' => $total_points, 'tiers' => $tiers);
+  return $rc;
+}
+
+function webform_benchmark_get_scores($uid,$nodeId) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  module_load_include('inc', 'webform', 'includes/webform.components');
+
+  $scores = array();
+
+  $submissions = webform_get_submissions(array('nid' => $nodeId, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                  array(':nid' => $nodeId))->fetchCol();
+  $node = node_load($nodeId);
+  $responses = webform_benchmark_get_responses($nodeId, $sid, $cids, TRUE, TRUE);
+  foreach ($responses as $response) {
+    foreach ($response as $cid => $answers) {
+        $question = $node->webform['components'][$cid];
+        $formkey = (string)$question['form_key'];
+        $answer = $answers[0];
+        // Check if the answer has our '__' delimeter
+        if (strpos($answer,'__') !== false) {
+          $pieces = explode('__', $answer);
+          $tmpanswer = $pieces[0];
+          $value = $pieces[1];
+          $scores[$formkey] = $value;
+        }
+    }
+  }
+  return $scores;
+}
+
+
+function webform_benchmark_compute_score_dynamic($uid,$nodeId,$community = false) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  module_load_include('inc', 'webform', 'includes/webform.components');
+
+  // Point toals for executive funtionc or community framework tiers depending on value of 
+  // $community parameter
+  $points = array(1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0);
+
+  $cro3totals = array(0 => 0, 1 => 0, 2 => 0, 3 => 0, 4 => 0);
+
+  $ib6total = 0;
+  //printr($nodeId);
+
+  $submissions = webform_get_submissions(array('nid' => $nodeId, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                  array(':nid' => $nodeId))->fetchCol();
+  $node = node_load($nodeId);
+  $responses = webform_benchmark_get_responses($nodeId, $sid, $cids, TRUE, TRUE);
+  foreach ($responses as $response) {
+    foreach ($response as $cid => $answers) {
+      $tier = db_query("SELECT tier FROM {assessment_question_tiers} WHERE nid = :nid AND cid = :cid",
+                    array(':nid' => $nodeId, ':cid' => $cid))->fetchCol();
+      $function = db_query("SELECT function FROM {assessment_question_functions} WHERE nid = :nid AND cid = :cid",
+                    array(':nid' => $nodeId, ':cid' => $cid))->fetchCol();
+      $possiblePoints = db_query("SELECT points FROM {webform_weight} WHERE nid = :nid AND cid = :cid",
+                    array(':nid' => $nodeId, ':cid' => $cid))->fetchCol();
+
+      $index = $function[0];
+      if ($community) $index = $tier[0];
+      $possiblePoints = $possiblePoints[0];
+      if ($possiblePoints > 0) {
+        $question = $node->webform['components'][$cid];
+        //printr($question);
+        $formkey = (string)$question['form_key'];
+        $multiselect = $question['extra']['multiple'];
+        
+        if ($multiselect) {
+          $count = count($answers);
+          if ($form_key == 'CRO2') {
+            // This question gives points based on count ranges
+            if ($count >= 3 && $count <= 8) { $points[$index] += 2; }
+            if ($count >= 1 && $count <= 2) { $points[$index] += 1; }
+          }
+          else if ($form_key == 'CRO6') {
+            // This question gives points based on count ranges
+            if ($count >= 2) { $points[$index] += 2; }
+            if ($count == 1) { $points[$index] += 1; }
+          }
+          else {
+            // Under normal circumstances, just give points for one or more selections
+            if ($count > 0) $points[$index] += 2;
+          }
+        }      
+        else {
+
+          // For single selection questions...
+          $answer = $answers[0];
+          // Check if the answer has our '__' delimeter
+          if (strpos($answer,'__') !== false) {
+            $pieces = explode('__', $answer);
+            $tmpanswer = $pieces[0];
+            $value = $pieces[1];
+            if (strpos($formkey, 'IB6') === 0) {
+              if ($value == 2) {
+                $ib6total = 2;
+              }
+            }
+            else $points[$index] += $value;
+          }
+        }    
+      }
+    }
+  }
+
+  // Add in the IB4 answer
+  // This score always affects tier 1 and function 1
+  //printr($ib6total);
+  $points[1] += $ib6total;
+
+  return $points;
+}
+
+// SDS - this should be the method called for initiative score now.
+function webform_benchmark_get_president_initiative_score_2($uid) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  module_load_include('inc', 'webform', 'includes/webform.components');
+
+  $dpoints = array(1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0);
+  for ($i=531; $i<553; $i++) {
+    $tmppoints = webform_benchmark_compute_score_dynamic($uid,$i);
+    foreach ($tmppoints as $function => $value) {
+      $dpoints[$function] += $value;
+    }
+  }
+
+  //printr($dpoints);
+  return $dpoints;
+}
+
+function webform_benchmark_get_president_initiative_subscores_2($uid) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  module_load_include('inc', 'webform', 'includes/webform.components');
+  
+  $subpoints = array(1 => array(), 2 => array(), 3 => array(), 4 => array(), 5 => array());
+  for($nid=531; $nid<=552; $nid++) {
+    $possiblePoints = db_query("SELECT points FROM {webform_weight} WHERE nid = :nid",
+                      array(':nid' => $nid))->fetchCol();
+                      
+    $points = webform_benchmark_compute_score_dynamic($uid,$nid);
+    foreach($points as $function => $total) {
+      if($total > 0) {
+        $subpoints[$function][$nid] = array();
+        
+        $node = node_load($nid);
+        //cybercharts_print_r($node);
+        
+        $subpoints[$function][$nid]['title'] = $node->title;
+        $subpoints[$function][$nid]['total'] = $total;
+        $totalPossible = array_sum($possiblePoints);
+        // We need to make a special case adjustment for node 532.  The item 6 items on that page can only count
+        // for 2 points max.  So to adjust, subtract 10.
+        if ($nid == 532) {
+          $totalPossible -= 10;
+        }
+        $subpoints[$function][$nid]['possible'] = $totalPossible;
+      }
+    }
+  }
+  
+  //printr("sub");
+  //printr($subpoints);
+  return $subpoints;
+}
+
+// NJC: added this function because there are a lot of hard-coded "possible points" all over the place
+function webform_benchmark_get_president_initiative_possible_points_2($uid) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  module_load_include('inc', 'webform', 'includes/webform.components');
+  
+  $possible_points = array(1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0);
+  
+  $subpoints = webform_benchmark_get_president_initiative_subscores_2($uid);
+
+  for ($i=1; $i<6; $i++) {
+    $function = $subpoints[$i];
+    $possible = 0;
+    foreach($function as $nid => $values) {
+      $possible += $values['possible'];
+    }
+    $possible_points[$i] = $possible;
+  }
+  
+  
+  /* NJC: you this! 
+  for($nodeId=531; $nodeId<553; $nodeId++) {
+    $functions = db_query("SELECT function FROM {assessment_question_functions} WHERE nid = :nid",
+                          array(':nid' => $nodeId))->fetchCol();
+    $possiblePoints = db_query("SELECT points FROM {webform_weight} WHERE nid = :nid",
+                        array(':nid' => $nodeId))->fetchCol();
+                        
+    foreach($functions as $cid => $function) {
+      $possible_points[$function] += $possiblePoints[$cid];
+    }
+  }*/
+  //printr($possible_points);
+  return $possible_points;
+}
+
+function webform_benchmark_get_community_framework_score_2($uid) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  $points = array(1 => 0, 2 => 0, 3 => 0);
+
+  $dpoints = array(1 => 0, 2 => 0, 3 => 0);
+
+  for ($i=531; $i<553; $i++) {
+    $tmppoints = webform_benchmark_compute_score_dynamic($uid,$i,TRUE);
+    foreach ($tmppoints as $function => $value) {
+      $dpoints[$function] += $tmppoints[$function];
+    }
+  }
+  
+  return $dpoints;
+}
+
+// Removes the '__' delimiter from the dynamic form responses so they can be processed by the old method
+function adapt_dynamic_responses_to_static(&$responses)
+{
+  foreach ($responses as $rkey => $response) {
+    foreach ($response as $skey => $section) {
+      foreach ($section as $vkey => $value) {
+          if (strpos($value,'__')) {
+            $pieces = explode('__', $value);
+            $responses[$rkey][$skey][$vkey] = $pieces[0];
+          }
+      }
+    }
+  }  
+  return $responses;
+}
+
+function webform_benchmark_get_community_framework_score_OLD_METHOD($uid) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  if ($uid == 1 || 1==1) {
+    $points = array(1 => 0, 2 => 0, 3 => 0);
+
+    $dpoints = array(1 => 0, 2 => 0, 3 => 0);
+    // Process the community framework using the dynamic method.
+    $tmppoints = webform_benchmark_get_president_initiative_score_dynamic($uid,144,TRUE);
+    // Using the dynamic method, ALL single select questions should have the '__' delimeter
+    // giving the point value.  If the delimiter is not present, we assume that the submission was from 
+    // before dynamic forms were implemented and then $tmppoints will be set to false.
+    if ($tmppoints !== false) {
+      foreach ($dpoints as $function => $value) {
+        $dpoints[$function] += $tmppoints[$function];
+      }
+      
+      for ($i=531; $i<553; $i++) {
+        $tmppoints = webform_benchmark_get_president_initiative_score_dynamic($uid,$i,TRUE);
+        foreach ($tmppoints as $function => $value) {
+          $dpoints[$function] += $tmppoints[$function];
+        }
+      }
+
+      //printr($dpoints);
+      return $dpoints;
+    }
+    
+    // This is the older method for dealing with older submissions.
+    // strategic organizational readiness
+    $submissions = webform_get_submissions(array('nid' => 144, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 144))->fetchCol();
+    //printr($cids);
+    $responses = webform_benchmark_get_responses(144, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    dprintr($responses);
+drupal_set_message($responses);
+    // q1
+    foreach ($responses[1][2] as $response) {
+      if ($response == 'Yes') { $points[1] += 2; }
+    }
+
+    // q2
+    $count2 = count($responses[2][3]);
+    if ($count2 >= 3 && $count2 <= 8) { $points[1] += 2; }
+    if ($count2 >= 1 && $count2 <= 2) { $points[1] += 1; }
+
+    // q3
+    $total = 0;
+    if (isset($responses[3])){
+      foreach ($responses[3] as $cid => $response) {
+        if ($response[0] == 'Sometimes' || $response[0] == 'Infrequently') { $points[1] += 1; break; }
+        if ($response[0] == 'Always' || $response[0] == 'Frequently') { $total += 2; }
+      }
+    }
+    if ($total >= 4) { $points[1] += 4; }
+    if ($total == 3 || $total == 2) { $points[1] += 3; }
+    if ($total == 1) { $points[1] += 2; }
+
+    // q4 
+    if (count($responses[4][11]) >= 2) { $points[1] += 2; }
+    if (count($responses[4][11]) == 1) { $points[1] += 1; }
+
+    // q5
+    if ($responses[5][13][0] == 'Yes') { $points[1] += 2; }
+
+    // q6
+    $count6 = count($responses[6][14]);
+    if ($count6 >= 2) { $points[1] += 2; }
+    if ($count6 == 1) { $points[1] += 1; }
+
+    // q7
+    if ($responses[7][15][0] == 'Yes') { $points[1] += 2; }
+
+    // q8
+    if ($responses[8][22][0] == 'Yes') { $points[1] += 2; }
+
+    // q9
+    if ($responses[9][16][0] == 'Yes') { $points[1] += 2; }
+
+    // q10
+    if ($responses[10][17][0] == 'Yes') { $points[1] += 2; }
+
+    // q11
+    if ($responses[11][18][0] == 'Yes') { $points[1] += 2; }
+
+    // q12
+    if ($responses[12][19][0] == 'Yes') { $points[1] += 2; }
+
+    // q13
+    if ($responses[13][20][0] == 'Yes') { $points[1] += 2; }
+
+    // q14
+    if ($responses[14][21][0] == 'Yes') { $points[1] += 2; }
+
+    // q15
+    foreach ($responses[15] as $cid => $response) {
+      if ($response[0] == 'Yes') { $points[3] += 2; }
+    }
+
+    // q16
+    if ($responses[16][27][0] == 'Yes') { $points[1] += 2; }
+
+    // q17
+    if ($responses[17][28][0] == 'Yes') { $points[1] += 2; }
+
+    // q18
+    if ($responses[18][29][0] == 'Yes') { $points[3] += 2; }
+
+    // q19
+    if ($responses[19][30][0] == 'Yes') { $points[3] += 2; }
+
+    // q20
+    if ($responses[20][32][0] == 'Always' || $responses[20][32][0] == 'Always') { $points[3] += 2; }
+    if ($responses[20][32][0] == 'Sometimes' || $responses[20][32][0] == 'Seldom') { $points[3] += 1; }
+
+    // q21
+    if ($responses[21][33][0] == 'Yes') { $points[1] += 2; }
+
+    // q22
+    if ($responses[22][34][0] == 'Yes') { $points[1] += 2; }
+
+    // q23
+    //a
+    if ($responses[23][37][0] == 'Yes') { $points[1] += 2; }
+    //b
+    if ($responses[23][38][0] == 'Yes') { $points[1] += 2; }
+    //c
+    if ($responses[23][39][0] == 'Yes') { $points[1] += 2; }
+
+    // nist 1 CF
+    $submissions = webform_get_submissions(array('nid' => 531, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 531))->fetchCol();
+    printr('nist 1 CF');
+    $responses = webform_benchmark_get_responses(531, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    printr($responses);
+
+    if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[3] += 1; }
+      if ($responses[4][5][0] == 'Always' || $responses[4][5][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[4][5][0] == 'Sometimes' || $responses[4][5][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[5][6][0] == 'Always' || $responses[5][6][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[5][6][0] == 'Sometimes' || $responses[5][6][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[6][7][0] == 'Always' || $responses[6][7][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[6][7][0] == 'Sometimes' || $responses[6][7][0] == 'Seldom') { $points[2] += 1; }
+
+    // nist 2 CF
+    $submissions = webform_get_submissions(array('nid' => 532, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 532))->fetchCol();
+    //printr('nist 2 CF');
+    $responses = webform_benchmark_get_responses(532, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+     //printr($responses);
+
+    if ($responses[1][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[2][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][5][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[2] += 2; }
+    if ($responses[5][7][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[6][8][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[7][9][0] == 'Yes') { $points[3] += 2; }
+
+
+    // nist 3 CF
+    $submissions = webform_get_submissions(array('nid' => 533, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 533))->fetchCol();
+    //printr('nist 3 CF');
+    $responses = webform_benchmark_get_responses(533, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][3][0] == 'Always' || $responses[1][3][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[1][3][0] == 'Sometimes' || $responses[1][3][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[2][4][0] == 'Always' || $responses[2][4][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[2][4][0] == 'Sometimes' || $responses[2][4][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[3][5][0] == 'Always' || $responses[3][5][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[3][5][0] == 'Sometimes' || $responses[3][5][0] == 'Seldom') { $points[3] += 1; }
+    if ($responses[4][6][0] == 'Always' || $responses[4][6][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[4][6][0] == 'Sometimes' || $responses[4][6][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[5][7][0] == 'Always' || $responses[5][7][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[5][7][0] == 'Sometimes' || $responses[5][7][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[6][9][0] == 'Always' || $responses[6][9][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[6][9][0] == 'Sometimes' || $responses[6][9][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[7][10][0] == 'Always' || $responses[7][10][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[7][10][0] == 'Sometimes' || $responses[7][10][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[8][12][0] == 'Always' || $responses[8][12][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[8][12][0] == 'Sometimes' || $responses[8][12][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[9][11][0] == 'Always' || $responses[9][11][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[9][11][0] == 'Sometimes' || $responses[9][11][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[10][13][0] == 'Always' || $responses[10][13][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[10][13][0] == 'Sometimes' || $responses[10][13][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[11][14][0] == 'Always' || $responses[11][14][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[11][14][0] == 'Sometimes' || $responses[11][14][0] == 'Seldom') { $points[2] += 1; }
+
+
+    // nist 4 CF
+    $submissions = webform_get_submissions(array('nid' => 534, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+ $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 534))->fetchCol();
+    //printr('nist 4 CF');
+    $responses = webform_benchmark_get_responses(534, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[2][4][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[3][5][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[5][7][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[6][8][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[7][9][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[8][12][0] == 'Yes') { $points[2] += 2; }
+    if ($responses[8][21][0] == 'Yes') { $points[2] += 2; }
+    if ($responses[8][23][0] == 'Yes') { $points[2] += 2; }
+     // nist 5 CF
+    $submissions = webform_get_submissions(array('nid' => 535, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 535))->fetchCol();
+    //printr('nist 5 CF');
+    $responses = webform_benchmark_get_responses(535, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][5][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[6][8][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[7][9][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[8][10][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[9][7][0] == 'Yes') { $points[3] += 2; }
+     // nist 6 CF
+    $submissions = webform_get_submissions(array('nid' => 536, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 536))->fetchCol();
+    //printr('nist 6 CF');
+    $responses = webform_benchmark_get_responses(536, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[4][5][0] == 'Always' || $responses[4][5][0] == 'Frequently') { $points[1] += 2; }
+    if ($responses[4][5][0] == 'Sometimes' || $responses[4][5][0] == 'Seldom') { $points[1] += 1; }
+
+    if ($responses[5][6][0] == 'Always' || $responses[5][6][0] == 'Frequently') { $points[1] += 2; }
+    if ($responses[5][6][0] == 'Sometimes' || $responses[5][6][0] == 'Seldom') { $points[1] += 1; }
+
+    if ($responses[6][7][0] == 'Always' || $responses[6][7][0] == 'Frequently') { $points[1] += 2; }
+    if ($responses[6][7][0] == 'Sometimes' || $responses[6][7][0] == 'Seldom') { $points[1] += 1; }
+
+    if ($responses[7][8][0] == 'Always' || $responses[7][8][0] == 'Frequently') { $points[1] += 2; }
+    if ($responses[7][8][0] == 'Sometimes' || $responses[7][8][0] == 'Seldom') { $points[1] += 1; }
+
+
+    // nist 7 CF
+    $submissions = webform_get_submissions(array('nid' => 537, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 537))->fetchCol();
+    //printr('nist 7 CF');
+    $responses = webform_benchmark_get_responses(537, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[4][8][0] == 'Always' || $responses[4][8][0] == 'Frequently') { $points[1] += 2; }
+    if ($responses[4][8][0] == 'Sometimes' || $responses[4][8][0] == 'Seldom') { $points[1] += 1; }
+    if ($responses[5][5][0] == 'Always' || $responses[5][5][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[5][5][0] == 'Sometimes' || $responses[5][5][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[6][6][0] == 'Always' || $responses[6][6][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[6][6][0] == 'Sometimes' || $responses[6][6][0] == 'Seldom') { $points[2] += 1; }
+
+    if ($responses[7][7][0] == 'Always' || $responses[7][7][0] == 'Frequently') { $points[2] += 2; }
+    if ($responses[7][7][0] == 'Sometimes' || $responses[7][7][0] == 'Seldom') { $points[2] += 1; }
+
+
+    // nist 8 CF
+    $submissions = webform_get_submissions(array('nid' => 538, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 538))->fetchCol();
+    //printr('nist 8 CF');
+    $responses = webform_benchmark_get_responses(538, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[4][5][0] == 'Always' || $responses[4][5][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[4][5][0] == 'Sometimes' || $responses[4][5][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[5][6][0] == 'Always' || $responses[5][6][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[5][6][0] == 'Sometimes' || $responses[5][6][0] == 'Seldom') { $points[3] += 1; }
+
+    if ($responses[6][7][0] == 'Always' || $responses[6][7][0] == 'Frequently') { $points[3] += 2; }
+    if ($responses[6][7][0] == 'Sometimes' || $responses[6][7][0] == 'Seldom') { $points[3] += 1; }
+
+
+    // nist 9
+    $submissions = webform_get_submissions(array('nid' => 539, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 539))->fetchCol();
+    //printr('nist 9 CF');
+    $responses = webform_benchmark_get_responses(539, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][5][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][7][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[6][8][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[7][9][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[8][10][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[9][11][0] == 'Yes') { $points[3] += 2; }
+
+
+  // nist 10 CF
+    $submissions = webform_get_submissions(array('nid' => 540, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 540))->fetchCol();
+    //printr('nist 10 CF');
+    $responses = webform_benchmark_get_responses(540, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	//new
+	
+	$submissions = webform_get_submissions(array('nid' => 541, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 541))->fetchCol();
+    //printr('nist 11 CF');
+    $responses = webform_benchmark_get_responses(541, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 542, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 542))->fetchCol();
+    //printr('nist 12 CF');
+    $responses = webform_benchmark_get_responses(542, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 543, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 543))->fetchCol();
+    //printr('nist 13 CF');
+    $responses = webform_benchmark_get_responses(543, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 544, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 544))->fetchCol();
+    //printr('nist 14 CF');
+    $responses = webform_benchmark_get_responses(544, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 545, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 545))->fetchCol();
+    //printr('nist 15 CF');
+    $responses = webform_benchmark_get_responses(545, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 546, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 546))->fetchCol();
+    //printr('nist 16 CF');
+    $responses = webform_benchmark_get_responses(546, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 547, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 547))->fetchCol();
+    //printr('nist 17 CF');
+    $responses = webform_benchmark_get_responses(547, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 548, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 548))->fetchCol();
+    //printr('nist 18 CF');
+    $responses = webform_benchmark_get_responses(548, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 549, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 549))->fetchCol();
+    //printr('nist 19 CF');
+    $responses = webform_benchmark_get_responses(549, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 550, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 550))->fetchCol();
+    //printr('nist 20 CF');
+    $responses = webform_benchmark_get_responses(550, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 551, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 551))->fetchCol();
+    //printr('nist 21 CF');
+    $responses = webform_benchmark_get_responses(551, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+	
+	$submissions = webform_get_submissions(array('nid' => 552, 'uid' => $uid, 'is_draft' => 0));
+    $sid = key($submissions);
+    $strategic = $submissions[$sid];
+    $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+      array(':nid' => 552))->fetchCol();
+    //printr('nist 22 CF');
+    $responses = webform_benchmark_get_responses(552, $sid, $cids, TRUE, TRUE);
+    adapt_dynamic_responses_to_static($responses);
+    //printr($responses);
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[3][4][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[4][6][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[5][5][0] == 'Yes') { $points[3] += 2; }
+	
+    //printr($points);
+    return $points;
+  }
+}
+
+function webform_benchmark_get_president_initiative_score_OLD_METHOD($uid) {
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  module_load_include('inc', 'webform', 'includes/webform.components');
+  if ($uid == 1 || 1==1) {
+    $points = array(1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0);
+
+  $dpoints = array(1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0);
+
+  // Process the strategic initiative using the dynamic method.
+  $tmppoints = webform_benchmark_get_president_initiative_score_dynamic($uid,144);
+  // Using the dynamic method, ALL single select questions should have the '__' delimeter
+  // giving the point value.  If the delimiter is not present, we assume that the submission was from 
+  // before dynamic forms were implemented and then $tmppoints will be set to false.
+  if ($tmppoints !== false) {
+    foreach ($tmppoints as $function => $value) {
+      $dpoints[$function] += $value;
+    }
+    //printr($dpoints);
+      
+    for ($i=531; $i<553; $i++) {
+      $tmppoints = webform_benchmark_get_president_initiative_score_dynamic($uid,$i);
+      foreach ($tmppoints as $function => $value) {
+        $dpoints[$function] += $value;
+      }
+    }
+  
+    //printr($dpoints);
+    return $dpoints;
+  }
+  
+  // This is the older method for dealing with older submissions.
+  // strategic organizational readiness
+  $submissions = webform_get_submissions(array('nid' => 144, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 144))->fetchCol();
+
+  $responses = webform_benchmark_get_responses(144, $sid, $cids, TRUE, TRUE);
+  // Add a step to remove the '__' delimiter
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+  
+  // q1
+  foreach ($responses[1][2] as $response) {
+    if ($response == 'Yes') { $points[1] += 2; }
+  }
+  
+  // q2
+  $count2 = count($responses[2][3]);
+  if ($count2 >= 3 && $count2 <= 8) { $points[1] += 2; }
+  if ($count2 >= 1 && $count2 <= 2) { $points[1] += 1; }
+  
+  // q3
+  $total = 0;
+  foreach ($responses[3] as $cid => $response) {
+    if ($response[0] == 'Sometimes' || $response[0] == 'Infrequently') { $points[1] += 1; break; }
+    if ($response[0] == 'Always' || $response[0] == 'Frequently') { $total += 1; }
+  }
+  if ($total >= 4) { $points[1] += 4; }
+  if ($total == 3 || $total == 2) { $points[1] += 3; }
+  if ($total == 1) { $points[1] += 2; }
+  
+  // q4 
+  if (count($responses[4][11]) > 0) { $points[1] += 2; }
+  
+  // q5
+  if (count($responses[5][13]) > 0) { $points[1] += 2; }
+  
+  
+  // q6
+  $count6 = count($responses[6][14]);
+  if ($count6 >= 2) { $points[1] += 2; }
+  if ($count6 == 1) { $points[1] += 1; }
+  $count6 = count($responses[6][14]);
+  
+  // q7
+  if ($responses[7][15][0] == 'Yes') { $points[1] += 2; }
+  
+  // q8
+  if ($responses[8][22][0] == 'Yes') { $points[1] += 2; }
+  
+  // q9
+  if ($responses[9][16][0] == 'Yes') { $points[1] += 2; }
+
+  // q10
+  if ($responses[10][17][0] == 'Yes') { $points[1] += 2; }
+  
+  // q11
+  if ($responses[11][18][0] == 'Yes') { $points[5] += 2; }
+  
+  // q12
+  if ($responses[12][19][0] == 'Yes') { $points[2] += 2; }
+  
+  // q13
+  if ($responses[13][20][0] == 'Yes') { $points[2] += 2; }
+
+  // q14
+  if ($responses[14][21][0] == 'Yes') { $points[2] += 2; }
+  
+  // q15
+  //a
+  if ($responses[15][24][0] == 'Yes') { $points[4] += 2; }
+  //b
+  if ($responses[15][25][0] == 'Yes') { $points[4] += 2; }
+  //c
+  if ($responses[15][26][0] == 'Yes') { $points[4] += 2; }
+
+  // q16
+  if ($responses[16][27][0] == 'Yes') { $points[1] += 2; }
+  
+  // q17
+  if ($responses[17][28][0] == 'Yes') { $points[5] += 2; }
+  
+  // q18
+  if ($responses[18][29][0] == 'Yes') { $points[4] += 2; }
+  
+  // q19
+  if ($responses[19][30][0] == 'Yes') { $points[1] += 2; }
+  
+  // q20
+  if ($responses[20][32][0] == 'Always' || $responses[20][32][0] == 'Always') { $points[1] += 2; }
+  if ($responses[20][32][0] == 'Sometimes' || $responses[20][32][0] == 'Seldom') { $points[1] += 1; }
+  
+  // q21
+  if ($responses[21][33][0] == 'Yes') { $points[4] += 2; }
+
+  // q22
+  if ($responses[22][34][0] == 'Yes') { $points[3] += 2; }
+
+  // q23
+  //a
+  if ($responses[23][37][0] == 'Yes') { $points[5] += 2; }
+  //b
+  if ($responses[23][38][0] == 'Yes') { $points[5] += 2; }
+  //c
+  if ($responses[23][39][0] == 'Yes') { $points[5] += 2; }
+  
+  // nist 1 P
+  $submissions = webform_get_submissions(array('nid' => 531, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 531))->fetchCol();
+  //printr('nist 1 P');
+  $responses = webform_benchmark_get_responses(531, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+  
+  if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[1] += 1; }
+  
+  if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[3] += 2; }
+  if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[3] += 1; }
+  
+  if ($responses[4][5][0] == 'Always' || $responses[4][5][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[4][5][0] == 'Sometimes' || $responses[4][5][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[5][6][0] == 'Always' || $responses[5][6][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[5][6][0] == 'Sometimes' || $responses[5][6][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[6][7][0] == 'Always' || $responses[6][7][0] == 'Frequently') { $points[4] += 2; }
+  if ($responses[6][7][0] == 'Sometimes' || $responses[6][7][0] == 'Seldom') { $points[4] += 1; }
+  
+  // nist 2 P
+  $submissions = webform_get_submissions(array('nid' => 532, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 532))->fetchCol();
+  //printr('nist 2 P');
+  $responses = webform_benchmark_get_responses(532, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+  
+  if ($responses[1][3][0] == 'Yes') { $points[2] += 2; }
+  
+  if ($responses[2][4][0] == 'Yes') { $points[3] += 2; }
+  
+  if ($responses[3][5][0] == 'Yes') { $points[2] += 2; }
+  
+  if ($responses[4][6][0] == 'Yes') { $points[2] += 2; }
+  
+  if ($responses[5][7][0] == 'Yes') { $points[2] += 2; }
+  
+  if ($responses[6][8][0] == 'Yes') { $points[3] += 2; }
+  
+  if ($responses[7][9][0] == 'Yes') { $points[3] += 2; }
+  
+  // nist 3 P
+  $submissions = webform_get_submissions(array('nid' => 533, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 533))->fetchCol();
+  //printr('nist 3 P');
+  $responses = webform_benchmark_get_responses(533, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+  
+  if ($responses[1][3][0] == 'Always' || $responses[1][3][0] == 'Frequently') { $points[3] += 2; }
+  if ($responses[1][3][0] == 'Sometimes' || $responses[1][3][0] == 'Seldom') { $points[3] += 1; }
+  
+  if ($responses[2][4][0] == 'Always' || $responses[2][4][0] == 'Frequently') { $points[3] += 2; }
+  if ($responses[2][4][0] == 'Sometimes' || $responses[2][4][0] == 'Seldom') { $points[3] += 1; }
+  
+  if ($responses[3][5][0] == 'Always' || $responses[3][5][0] == 'Frequently') { $points[3] += 2; }
+  if ($responses[3][5][0] == 'Sometimes' || $responses[3][5][0] == 'Seldom') { $points[3] += 1; }
+  
+  if ($responses[4][6][0] == 'Always' || $responses[4][6][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[4][6][0] == 'Sometimes' || $responses[4][6][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[5][7][0] == 'Always' || $responses[5][7][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[5][7][0] == 'Sometimes' || $responses[5][7][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[6][9][0] == 'Always' || $responses[6][9][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[6][9][0] == 'Sometimes' || $responses[6][9][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[7][10][0] == 'Always' || $responses[7][10][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[7][10][0] == 'Sometimes' || $responses[7][10][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[8][12][0] == 'Always' || $responses[8][12][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[8][12][0] == 'Sometimes' || $responses[8][12][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[9][11][0] == 'Always' || $responses[9][11][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[9][11][0] == 'Sometimes' || $responses[9][11][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[10][13][0] == 'Always' || $responses[10][13][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[10][13][0] == 'Sometimes' || $responses[10][13][0] == 'Seldom') { $points[2] += 1; }
+  
+  if ($responses[11][14][0] == 'Always' || $responses[11][14][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[11][14][0] == 'Sometimes' || $responses[11][14][0] == 'Seldom') { $points[2] += 1; }
+  
+  // nist 4 P
+  $submissions = webform_get_submissions(array('nid' => 534, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 534))->fetchCol();
+  //printr('nist 4 P');
+  $responses = webform_benchmark_get_responses(534, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[1] += 2; }
+
+  if ($responses[2][4][0] == 'Yes') { $points[1] += 2; }
+
+  if ($responses[3][5][0] == 'Yes') { $points[1] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[1] += 2; }
+
+  if ($responses[5][7][0] == 'Yes') { $points[1] += 2; }
+
+  if ($responses[6][8][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[7][9][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[8][12][0] == 'Yes') { $points[2] += 2; }
+  if ($responses[8][21][0] == 'Yes') { $points[2] += 2; }
+if ($responses[8][23][0] == 'Yes') { $points[2] += 2; }
+
+  // nist 5 P
+  $submissions = webform_get_submissions(array('nid' => 535, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 535))->fetchCol();
+  //printr('nist 5 P');
+  $responses = webform_benchmark_get_responses(535, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[4][5][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][6][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[6][8][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[7][9][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[8][10][0] == 'Yes') { $points[2] += 2; }
+  
+  if ($responses[9][7][0] == 'Yes') { $points[2] += 2; }
+
+  // nist 6 P
+  $submissions = webform_get_submissions(array('nid' => 536, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 536))->fetchCol();
+  //printr('nist 6 P');
+  $responses = webform_benchmark_get_responses(536, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[1] += 1; }
+
+  if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[4][5][0] == 'Always' || $responses[4][5][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[4][5][0] == 'Sometimes' || $responses[4][5][0] == 'Seldom') { $points[2] += 1; }
+
+
+  if ($responses[5][6][0] == 'Always' || $responses[5][6][0] == 'Frequently') { $points[2] += 2; }
+
+if ($responses[5][6][0] == 'Always' || $responses[5][6][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[5][6][0] == 'Sometimes' || $responses[5][6][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[6][7][0] == 'Always' || $responses[6][7][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[6][7][0] == 'Sometimes' || $responses[6][7][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[7][8][0] == 'Always' || $responses[7][8][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[7][8][0] == 'Sometimes' || $responses[7][8][0] == 'Seldom') { $points[2] += 1; }
+
+  // nist 7 P
+  $submissions = webform_get_submissions(array('nid' => 537, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 537))->fetchCol();
+  //printr('nist 7 P');
+  $responses = webform_benchmark_get_responses(537, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[1] += 1; }
+
+  if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[1] += 1; }
+
+  if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[1] += 1; }
+  if ($responses[4][8][0] == 'Always' || $responses[4][8][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[4][8][0] == 'Sometimes' || $responses[4][8][0] == 'Seldom') { $points[1] += 1; }
+
+  if ($responses[5][5][0] == 'Always' || $responses[5][5][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[5][5][0] == 'Sometimes' || $responses[5][5][0] == 'Seldom') { $points[1] += 1; }
+
+  if ($responses[6][6][0] == 'Always' || $responses[6][6][0] == 'Frequently') { $points[3] += 2; }
+  if ($responses[6][6][0] == 'Sometimes' || $responses[6][6][0] == 'Seldom') { $points[3] += 1; }
+
+  if ($responses[7][7][0] == 'Always' || $responses[7][7][0] == 'Frequently') { $points[3] += 2; }
+  if ($responses[7][7][0] == 'Sometimes' || $responses[7][7][0] == 'Seldom') { $points[3] += 1; }
+
+  // nist 8 P
+  $submissions = webform_get_submissions(array('nid' => 538, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 538))->fetchCol();
+  //printr('nist 8 P');
+  $responses = webform_benchmark_get_responses(538, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Always' || $responses[1][2][0] == 'Frequently') { $points[1] += 2; }
+  if ($responses[1][2][0] == 'Sometimes' || $responses[1][2][0] == 'Seldom') { $points[1] += 1; }
+
+  if ($responses[2][3][0] == 'Always' || $responses[2][3][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[2][3][0] == 'Sometimes' || $responses[2][3][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[3][4][0] == 'Always' || $responses[3][4][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[3][4][0] == 'Sometimes' || $responses[3][4][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[4][5][0] == 'Always' || $responses[4][5][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[4][5][0] == 'Sometimes' || $responses[4][5][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[5][6][0] == 'Always' || $responses[5][6][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[5][6][0] == 'Sometimes' || $responses[5][6][0] == 'Seldom') { $points[2] += 1; }
+
+  if ($responses[6][7][0] == 'Always' || $responses[6][7][0] == 'Frequently') { $points[2] += 2; }
+  if ($responses[6][7][0] == 'Sometimes' || $responses[6][7][0] == 'Seldom') { $points[2] += 1; }
+
+  // nist 9 P
+  $submissions = webform_get_submissions(array('nid' => 539, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 539))->fetchCol();
+  //printr('nist 9 P');
+  $responses = webform_benchmark_get_responses(539, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][3][0] == 'Yes') { $points[1] += 2; }
+
+  if ($responses[2][4][0] == 'Yes') { $points[1] += 2; }
+   if ($responses[3][5][0] == 'Yes') { $points[1] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][7][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[6][8][0] == 'Yes') { $points[5] += 2; }
+
+  if ($responses[7][9][0] == 'Yes') { $points[5] += 2; }
+
+  if ($responses[8][10][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[9][11][0] == 'Yes') { $points[2] += 2; }
+
+  // nist 10 P
+  $submissions = webform_get_submissions(array('nid' => 540, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 540))->fetchCol();
+  //printr('nist 10 P');
+  $responses = webform_benchmark_get_responses(540, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+  
+  $submissions = webform_get_submissions(array('nid' => 541, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 541))->fetchCol();
+  //printr('nist 11 P');
+  $responses = webform_benchmark_get_responses(541, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 542, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 542))->fetchCol();
+  //printr('nist 12 P');
+  $responses = webform_benchmark_get_responses(542, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 543, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 543))->fetchCol();
+  //printr('nist 13 P');
+  $responses = webform_benchmark_get_responses(543, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 544, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 544))->fetchCol();
+  //printr('nist 14 P');
+  $responses = webform_benchmark_get_responses(544, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 545, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 545))->fetchCol();
+  //printr('nist 15 P');
+  $responses = webform_benchmark_get_responses(545, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 544, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 546))->fetchCol();
+  //printr('nist 16 P');
+  $responses = webform_benchmark_get_responses(546, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 547, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 547))->fetchCol();
+  //printr('nist 17 P');
+  $responses = webform_benchmark_get_responses(547, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+  
+  
+  $submissions = webform_get_submissions(array('nid' => 548, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 548))->fetchCol();
+  //printr('nist 18 P');
+  $responses = webform_benchmark_get_responses(548, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 549, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 549))->fetchCol();
+  //printr('nist 19 P');
+  $responses = webform_benchmark_get_responses(549, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 550, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 550))->fetchCol();
+  //printr('nist 20 P');
+  $responses = webform_benchmark_get_responses(550, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 551, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 551))->fetchCol();
+  //printr('nist 21 P');
+  $responses = webform_benchmark_get_responses(551, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+
+$submissions = webform_get_submissions(array('nid' => 552, 'uid' => $uid, 'is_draft' => 0));
+  $sid = key($submissions);
+  $strategic = $submissions[$sid];
+  $cids = db_query("SELECT cid FROM {webform_component} WHERE nid = :nid AND type <> 'fieldset'",
+                    array(':nid' => 552))->fetchCol();
+  //printr('nist 22 P');
+  $responses = webform_benchmark_get_responses(552, $sid, $cids, TRUE, TRUE);
+  adapt_dynamic_responses_to_static($responses);
+  //printr($responses);
+
+  if ($responses[1][2][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[2][3][0] == 'Yes') { $points[2] += 2; }
+
+    if ($responses[1][2][0] == 'Yes') { $points[3] += 2; }
+
+    if ($responses[2][3][0] == 'Yes') { $points[3] += 2; }
+
+  if ($responses[3][4][0] == 'Yes') { $points[2] += 2; }
+
+  if ($responses[5][5][0] == 'Yes') { $points[4] += 2; }
+
+  if ($responses[4][6][0] == 'Yes') { $points[4] += 2; }
+
+  //printr($points);
+  return $points;
+  }
+}
+
+function webform_benchmark_get_community_framework_score($uid, $tier) {
+/* Currently unused */
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  
+  // get respondent profile buddies
+  $respondent_profile_buddies = webform_benchmark_get_respondent_profile_buddies($uid);
+  if (!empty($respondent_profile_buddies)) {
+    //printr($respondent_profile_buddies);
+    // get all cids in this tier
+    $query = "SELECT nid, cid FROM {assessment_question_tiers} WHERE tier = :tier";
+    $results = db_query($query, array(':tier' => $tier))->fetchAll();
+    print_r($results);
+    $components = array();
+    foreach ($results as $result) {
+      $components[$result->nid][] = $result->cid;
+    }
+    //printr($components);
+    foreach ($components as $nid => $cids) {
+      //if (!$uid) return;
+      //printr($cids);
+      $assessment = node_load($nid);
+      //return;
+      $submissions = webform_get_submissions(array('nid' => $nid, 'uid' => $uid, 'is_draft' => 0));
+      //printr($submissions);
+      $sid = key($submissions);
+      //printr($sid);
+      //printr($nid);
+      $responses_to_compare = webform_benchmark_get_responses($nid, $sid, $cids, TRUE);
+      //printr($responses_to_compare);
+      $most_popular_responses = webform_benchmark_get_most_popular_responses($nid, $cids, $respondent_profile_buddies, TRUE);
+      /*if (!empty($cids)) {
+        foreach ($cids as $cid) {
+          $most_popular_responses[$cid] = webform_benchmark_get_most_popular_response($nid, $cid, $respondent_profile_buddies);
+        }
+      }*/
+      //printr($most_popular_responses);
+      //printr($responses_to_compare);
+      $total = 0;
+      $possible = 0;
+      foreach ($responses_to_compare as $question => $response) {
+        //printr($response);
+        if (!empty($response)) {
+          //printr($response);
+          $cid = key($response);
+          //printr($cid);
+          $points = webform_weight_get_points($nid, $cid);
+          //$question = capability_maturity_get_question_number($nid, $cid);
+          //printr($nid . ': ' . $question . ': ' . $points);
+          $possible += $points;
+          if ($response == $most_popular_responses[$question]) {
+            $total += $points;
+          }
+        }
+      }
+    }
+    //printr($total);
+  
+    return array('total' => $total, 'possible' => $possible);
+  }
+  else {
+    return array('total' => 0, 'possible' => 0);
+  }
+}
+
+function webform_benchmark_get_respondent_profile_buddies($uid) {
+  $respondent_nid = 111;
+  $respondent_cids = array(1,2,3,4,5,6,7,8,9);
+  $respondent_profile_sid = db_query("SELECT sid FROM {webform_submissions}
+                                      WHERE nid = :nid AND uid = :uid", array(':nid' => $respondent_nid, ':uid' => $uid))->fetchField();
+  $respondent_profile_values = webform_benchmark_get_responses($respondent_nid, $respondent_profile_sid, $respondent_cids);
+  $respondent_profile_buddies = webform_benchmark_get_users_by_survey_results($respondent_nid, $respondent_profile_values);
+  
+  return $respondent_profile_buddies;
+}
+
+function webform_benchmark_get_most_popular_response($nid, $cid, $uids = array()) {
+  if (!empty($uids)) {
+    $question = capability_maturity_get_question_number($nid, $cid);
+    $query = "SELECT wsd.data FROM {webform_submitted_data} wsd
+              WHERE nid = :nid and cid = :cid
+                AND sid IN (SELECT sid FROM {webform_submissions} WHERE uid IN (:uids))
+              ORDER BY COUNT(data) DESC LIMIT 1";
+   
+    $most_popular = db_query($query, array(':nid' => $nid, ':cid' => $cid, ':uids' => $uids))->fetchField();
+  }
+  else {
+    $most_popular = FALSE;
+  }
+  
+  return $most_popular;
+}
+
+function webform_benchmark_get_most_popular_responses($nid, $cids, $uids, $questions = FALSE) {
+  if (!empty($cids)) {
+    $responses = array();
+    foreach ($cids as $cid) {
+      //printr($cid);
+      $query = "SELECT aqn.question, wsd.data FROM {assessment_question_numbers} aqn
+                LEFT JOIN {webform_submitted_data} wsd
+                 ON aqn.cid = wsd.cid AND aqn.nid = wsd.nid
+                WHERE wsd.nid = :nid and wsd.cid = :cid
+                  AND wsd.sid IN (SELECT sid FROM {webform_submissions} WHERE uid IN (:uids))
+                ORDER BY COUNT(wsd.data) DESC LIMIT 1";
+      $result = db_query($query, array(':nid' => $nid, ':cid' => $cid, ':uids' => $uids))->fetchObject();
+      if ($questions) {
+      $responses[$result->question][$cid] = $result->data;
+      }
+      else {
+        $responses[$cid] = $result->data;
+      }
+    }
+  }
+  
+  return $responses;
+}
+
+function webform_benchmark_get_responses($nid, $sid, $cids = array(), $questions = FALSE, $group = FALSE) {
+  if (!empty($cids)) {
+    $query = "SELECT aqn.question, wsd.cid, wsd.data FROM {assessment_question_numbers} aqn
+                LEFT JOIN {webform_submitted_data} wsd
+                  ON aqn.cid = wsd.cid AND aqn.nid = wsd.nid
+                WHERE wsd.nid = :nid AND wsd.sid = :sid AND wsd.cid IN (:cids)";
+    $results = db_query($query, array(':nid' => $nid, ':sid' => $sid, ':cids' => $cids))->fetchAll();
+  }
+  $responses = array();
+  foreach ($results as $result) {
+    if ($questions) {
+      if ($group) {
+        $responses[$result->question][$result->cid][] = $result->data;
+      }
+      else {
+        $responses[$result->question][$result->cid] = $result->data;
+      }
+    }
+    else {
+      if ($group) {
+        $responses[$result->cid][] = $result->data;
+      }
+      else {
+        $responses[$result->cid] = $result->data;
+      }
+    }
+  }
+  //printr($responses);
+  return $responses;
+}
+
+function webform_benchmark_count_responses($survey_id, $cid, $sid_to_exclude, $key_label = array(), $uids) {
+  //printr($survey_id);
+  //printr($cid);
+  //printr($sid_to_exclude);
+  $query = "SELECT data, COUNT(data) AS count FROM {webform_submitted_data}
+            WHERE nid = :nid AND cid = :cid AND sid <> :sid";
+  if ($uids) {
+    $query .= " AND sid IN (SELECT sid FROM {webform_submissions} WHERE uid IN (:uids))";
+  }
+  $query .= " GROUP BY data ORDER BY count DESC";
+  $counts = db_query($query, array(':nid' => $survey_id, ':cid' => $cid, ':sid' => $sid_to_exclude,
+                                   ':uids' => $uids))->fetchAllKeyed();
+  //printr($counts);
+  if (!empty($counts)) {
+    $counts_derp = array();
+    foreach ($counts as $key => $count) {
+      if ($key && isset($key_label[$cid][$key])) {
+        $counts_derp[$key_label[$cid][$key]] = $count;
+      }
+    }
+    //printr($counts_derp);
+    return $counts_derp;
+  }
+  
+  return $counts;
+}
+
+function webform_benchmark_get_parent_fieldset_title($nid, $cid) {
+  $pid = db_query("SELECT pid FROM {webform_component} WHERE nid = :nid AND cid = :cid", 
+                   array(':nid' => $nid, ':cid' => $cid))->fetchField();
+  $ppid = db_query("SELECT pid FROM {webform_component} WHERE nid = :nid AND cid = :cid", 
+                   array(':nid' => $nid, ':cid' => $pid))->fetchField();
+  if ($pid && $ppid) {
+    $title = db_query("SELECT name FROM {webform_component} WHERE nid = :nid AND cid = :cid",
+                       array(':nid' => $nid, ':cid' => $pid))->fetchField();
+    return $title;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function webform_benchmark_benchmark_component($nid, $cid, $uids = array()) {
+  //printr(implode(',', $uids));
+  $query = "SELECT ws.uid, wsd.data FROM {webform_submitted_data} wsd
+            LEFT JOIN {webform_submissions} ws ON wsd.sid = ws.sid
+            WHERE wsd.nid = :nid AND wsd.cid = :cid
+              AND ws.uid IN (:uids)";
+  return db_query($query, array(':nid' => $nid, ':cid' => $cid, ':uids' => $uids))->fetchAllKeyed();
+}
+
+function webform_benchmark_get_key_label($nid, $cid) {
+  $extra = unserialize(db_query("SELECT extra FROM {webform_component} WHERE nid = :nid AND cid = :cid",
+                                 array(':nid' => $nid, ':cid' => $cid))->fetchField());
+  $key_label = array();
+  if (isset($extra['items'])) {
+    $items = $extra['items'];
+    $items = explode("\r\n", $items);
+    foreach ($items as $item) {
+      $split = explode('|', $item);
+      $key_label[$split[0]] = isset($split[1]) ? $split[1] : $split[0];
+    }
+  }
+  
+  return $key_label;
+}
+
+function webform_benchmark_has_submitted($nid, $uid) {
+  $has_submitted = db_query("SELECT sid FROM {webform_submissions} WHERE nid = :nid AND uid = :uid LIMIT 1",
+                             array(':nid' => $nid, ':uid' => $uid))->fetchField();
+  return $has_submitted ? $has_submitted : FALSE;
+}
+
+function webform_benchmark_get_is_draft_attribute($nid, $uid) {
+  $is_draft = db_query("SELECT is_draft FROM {webform_submissions} WHERE nid = :nid AND uid = :uid LIMIT 1",
+                             array(':nid' => $nid, ':uid' => $uid))->fetchField();
+  return $is_draft ? 'is_draft' : 'not_draft';
+}
+
+function webform_benchmark_views_api() {
+  return array(
+    'api' => 3,
+  );
+}

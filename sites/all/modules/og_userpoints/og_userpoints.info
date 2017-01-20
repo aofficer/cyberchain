@@ -1,0 +1,5 @@
+name = OG Userpoints
+description = Handles Userpoints related tasks within OG
+core = 7.x
+version = 7.x-1.0-dev
+package = Userpoints

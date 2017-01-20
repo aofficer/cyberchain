@@ -1,0 +1,9 @@
+<?php
+
+/** Implements hook_ctools_plugin_directory **/
+function rate_panels_ctools_plugin_directory($owner, $plugin_type) {
+  // we'll be nice and limit scandir() calls
+  if ($owner == 'ctools') {
+    return "plugins/$plugin_type";
+  }
+}

@@ -1,0 +1,4 @@
+name = Helpers
+description = Provides helper functions for use by other modules
+core = 7.x
+version = 7.x-1.0-dev

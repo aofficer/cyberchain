@@ -1,0 +1,535 @@
+<?php
+
+/** Implements hook_ctools_plugin_directory() **/
+function capability_maturity_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'ctools' && !empty($plugin)) {
+    return "plugins/$plugin";
+  }
+}
+
+/** Implements hook_form_FORM_ID_alter() **/
+function capability_maturity_form_webform_component_edit_form_alter(&$form, &$form_state, $form_id) {
+  if ($form['type']['#value'] != 'fieldset') {
+    $nums = array();
+    for ($i = 1; $i <= 100; $i++) {
+      $nums[$i] = $i;
+    }
+    $default = capability_maturity_get_question_number($form['nid']['#value'], $form['cid']['#value']);
+    $form['question_number'] = array(
+      '#type' => 'select',
+      '#title' => t('Question number'),
+      '#description' => t('Which question number does this component correspond to?'),
+      '#options' => $nums,
+      '#default_value' => $default,
+      '#weight' => -999,
+    );
+  }
+}
+
+function capability_maturity_get_question_number($nid, $cid) {
+  $question = db_query("SELECT question FROM {assessment_question_numbers} WHERE nid = :nid AND cid = :cid",
+                      array(':nid' => $nid, ':cid' => $cid))->fetchField();
+                      
+  return $question ? $question : FALSE;
+}
+
+function capability_maturity_get_component_id($nid, $question) {
+  $cids = db_query("SELECT cid FROM {assessment_question_numbers} WHERE nid = :nid AND question = :question",
+                      array(':nid' => $nid, ':question' => $question))->fetchCol();
+  //printr($cids);
+                      
+  return count($cids) == 1 ? $cids[0] : $cids;
+}
+
+function capability_maturity_webform_component_insert($component) {
+  capability_maturity_webform_component_update($component);
+}
+function capability_maturity_webform_component_update($component) {
+  if (isset($component['question_number'])) {
+    capability_maturity_save_question($component['nid'], $component['cid'], $component['question_number']);
+  }
+}
+
+function capability_maturity_save_question($nid, $cid, $question) {
+  db_merge('assessment_question_numbers')
+    ->key(array('nid' => $nid, 'cid' => $cid))
+    ->fields(array(
+      'question' => $question,
+    ))->execute();
+}
+
+/** Implements hook_theme() **/
+function capability_maturity_theme() {
+  return array(
+    'capability_maturity_levels' => array(
+      'variables' => array('maturity_levels' => NULL,),
+      'template' => 'capability-maturity-levels',
+    ),
+  );
+}
+
+function capability_maturity_preprocess_capability_maturity_levels(&$vars) {
+  //printr('wut');
+}
+
+function capability_maturity_get_implementation_tier_scores($uid) {
+  $scores = array();
+  for ($i=531; $i<553; $i++) {
+    $nodescores = webform_benchmark_get_scores($uid,$i);
+    $scores = array_merge($scores,$nodescores);
+  }  
+  //printr($scores);
+  return $scores;
+}
+
+function capability_maturity_get_levels($uid) {
+  $components = capability_maturity_get_components();
+  $sor_survey = 144;
+  $nist_1 = 116;
+  $nist_2 = 117;
+  $nist_3 = 118;
+  $nist_4 = 119;
+  $nist_5 = 120;
+  $nist_6 = 121;
+  $nist_7 = 122;
+  $nist_8 = 123;
+  $nist_9 = 124;
+  $nist_10 = 125;
+  $nodes = array($sor_survey, $nist_1, $nist_2, $nist_3, $nist_4, $nist_5, $nist_6, $nist_7, $nist_8, $nist_9, $nist_10);
+  $submissions = array();
+  module_load_include('inc', 'webform', 'includes/webform.submissions');
+  foreach ($nodes as $nid) {
+    $sid = db_query("SELECT sid FROM {webform_submissions} WHERE nid = :nid AND uid = :uid ORDER BY submitted LIMIT 1",
+                     array(':nid' => $nid, ':uid' => $uid))->fetchField();
+    if ($sid) {
+      $submissions[$nid] = webform_get_submission($nid, $sid);
+    }
+  }
+  
+  $list = array();
+  foreach ($components as $tier => $components_list) {
+    foreach ($components_list as $component => $findings) {
+      $level = capability_maturity_get_level($tier, $component, $submissions);
+      $recommendation = capability_maturity_get_recommendation($tier, $level);
+      $list[$tier][$component]['level'] = $level;
+      $list[$tier][$component]['recommendation'] = $recommendation;
+      //printr($recommendation);
+    }
+    
+  }  
+  return $list;
+  //printr($submissions);
+}
+
+function capability_maturity_get_components() {
+  $components = array(
+    'Tier 1: Governance' => array(
+      'Responsibility for Risk Management' => 
+        array('Limited to CIO shop', 'Involves multiple business units', 'Extensive, enterprise, and supply chain-wise'),
+      'Interaction between CIO/CSO and other key enterprise executives/supply chain partners' =>
+        array('Non-existent', 'Limited', 'Extensive'),
+      'Enterprise Risk Management (ERM) program elements' =>
+        array('Not defined', 'Defined and partially implemented', 'Fully defined and implemented'),
+      'Systematic Risk Assessment activities' =>
+        array('None', 'Selected risk assessment across the enterprise', 'Extensive supply chain-wide risk assessment activities involving suppliers and customers'),
+      'Risk Monitoring/digital forensics and reporting capacity' =>
+        array('No risk monitoring/digital forensics and reporting capacity in place', 'Limited capacity in place', 'Extensive capacity in place'),
+    ),
+    'Tier 2: Systems Integration' => array(
+      'Security control of personnel, facilities, and Processes' =>
+        array('Due diligence/background checks of new hires and facility access control', 
+              'Periodic security reviews of current employees and periodic monitoring of physical and IT access logs',
+              'Constant due diligence of employees and contractors/suppliers; and continuous monitoring of extended enterprise physical and IT access logs'),
+      'System risk management embedded as over arching contractual obligation for contractors/suppliers' =>
+        array('Not explicitly built into contracts',
+              'Explicitly built into contracts but not aggressively monitored or enforced',
+              'Explicitly built into contracts; aggressively monitored and enforced; consistent termination of out of compliance contractors/suppliers'),
+      'Design of resilient systems via threat modeling and war gaming' =>
+        array('Used sporadically to react to /address escalation in system threats',
+              'Used by internal enterprise personnel in pro-actively designing selective systems',
+              'Used as a critical design tool across all critical systems with key supply chain partners'),
+      'Risk mitigation' =>
+        array('Risks not identified, nor assigned to specific personnel for mitigation purposes',
+              'Some risks identified and assigned for mitigation purposes, with sporadic follow up',
+              'Continuous identification, assignation, mitigation and monitoring of identified risks'),
+      'Defense against IT supply chain breaches' =>
+        array('Limited to IT perimeter defenses and intrusion detection',
+              'Broader IT system surveillance, including mechanisms such as proxy server code repositories for scanning/detecting viruses',
+              'Real Time Risk Dashboards and sensor grids for global situational awareness of IT and physical supply chains')
+    ),
+    'Tier 3: Operations' => array(
+      'Validation of IT system components' =>
+        array('Limited to compliance-leve testing',
+              'System-wide quality assurance processes put into place',
+              'Full spectrum strategy to assure integrity of systems: use of embedded signatures, quarantining of suspect components, auditing of Certificates of Conformance, etc'),
+      'Software configuration management systems and hardware certificates of traceability' =>
+        array('Compliance-level tracking',
+              'Attempts to maintain/audit completeness and accuracy of all product and component “pedigree” documents',
+              'Full spectrum strategy to assure continuous visibility of software and hardware production/delivery cycle thru RFID, digital locks, video surveillance, tracking portals, etc.'),
+      'Supplier qualification and operational checks' =>
+        array('Frequent purchases on grey market; limited due diligence over suppliers',
+              'Pre-qualification of suppliers; limited screening of carriers',
+              'Comprehensive sourcing strategy and use of only known suppliers and trusted carriers'),
+      'Protocols to deal with counterfeit parts' =>
+        array('Case by case response to suspect parts',
+              'Built in contract mechanisms to return suspect parts to suppliers',
+              'Pre-established relations with Customs, the FBI, etc., and SOPs to remove/refer suspect parts from the supply chain')
+    ),
+  );
+  
+  return $components;
+}
+
+function capability_maturity_get_level($tier, $component, $submissions) {
+  //printr($submissions);
+  switch ($tier) {
+    case 'Tier 1: Governance':
+      switch ($component) {
+        case 'Responsibility for Risk Management':
+          $q1 = capability_maturity_get_response($submissions, 144, 1);
+          $q2 = capability_maturity_get_response($submissions, 144, 2);
+          if (($q1[0] == 'Yes' || $q1[0] == "Don't Know") ||
+              ($q1[0] == 'No' && count($q2) < 2)) {
+            return 'Emergent';
+          }
+          elseif ($q1[0] == 'No' && count($q2) >= 2) {
+            return 'Diligent';
+          }
+          elseif ($q1[0] == 'No' && count($q2) >= 3) {
+            return 'Proficient';
+          }
+          break;
+        case 'Interaction between CIO/CSO and other key enterprise executives/supply chain partners':
+          $q3 = capability_maturity_get_response($submissions, 144, 3);
+          //printr($q3);
+          $never = 0;
+          $infrequently = 0;
+          $sometimes = 0;
+          $frequently = 0;
+          $always = 0;
+          foreach ($q3 as $response) {
+            if ($response == 'Never') { $never++; }
+            if ($response == 'Infrequently') { $infrequently++; }
+            if ($response == 'Sometimes') { $sometimes++; }
+            if ($response == 'Frequently') { $frequently++; }
+            if ($response == 'Always') { $always++; }
+          }
+          if ($never == count($q3) || $infrequently == count($q3)) {
+            return 'Emergent';
+          }
+          elseif (($sometimes >= 1 && $sometimes <= 3) || ($frequently >= 1 && $frequently <= 3) ||
+                  ($always >= 1 && $always <= 3)) {
+            return 'Diligent';
+          }
+          elseif (($sometimes >= 4 && $sometimes <= 6) || ($frequently >= 4 && $frequently <= 6) ||
+                  ($always >= 4 && $always <= 6)) {
+            return 'Proficient';
+          }
+          break;
+        case 'Enterprise Risk Management (ERM) program elements':
+          $q4 = capability_maturity_get_response($submissions, 144, 4);
+          //printr($q4);
+          return 'Undefined';
+          break;
+        case 'Systematic Risk Assessment activities':
+          $q5 = capability_maturity_get_response($submissions, 144, 5);
+          $q6 = capability_maturity_get_response($submissions, 144, 6);
+          if (($q5[0] == 'No' || $q5[0] == "Don't know") && ($q6[0] == 'None of the above')) {
+            return 'Emergent';
+          }
+          return 'Undefined';
+          break;
+        case 'Risk Monitoring/digital forensics and reporting capacity':
+          $q20 = capability_maturity_get_response($submissions, 144, 20);
+          $q21 = capability_maturity_get_response($submissions, 144, 21);
+          $q22 = capability_maturity_get_response($submissions, 144, 22);
+          if ($q20[0] == 'Never' || $q20[0] == 'Infrequently') {
+            return 'Emergent';
+          }
+          elseif ($q20 == 'Sometimes') {
+            return 'Diligent';
+          }
+          elseif (($q20[0] == 'Frequently' || $q20[0] == 'Always') && ($q21[0] == 'Yes' || $q22[0] == 'Yes')) {
+            return 'Proficient';
+          }
+          break;
+      }
+      break;
+    case 'Tier 2: Systems Integration':
+      switch ($component) {
+        case 'Security control of personnel, facilities, and Processes':
+          $q1 = capability_maturity_get_response($submissions, 117, 1);
+          $q2 = capability_maturity_get_response($submissions, 117, 2);
+          $q3 = capability_maturity_get_response($submissions, 117, 3);
+          $q4 = capability_maturity_get_response($submissions, 117, 4);
+          $q5 = capability_maturity_get_response($submissions, 117, 5);
+          $q6 = capability_maturity_get_response($submissions, 117, 6);
+          $q7 = capability_maturity_get_response($submissions, 117, 7);
+          $responses = array($q1[0], $q2[0], $q3[0], $q4[0], $q5[0], $q6[0], $q7[0]);
+          $yes = 0;
+          foreach ($responses as $response) {
+            if ($response == 'Yes') {
+              $yes++;
+            }
+          }
+          if ($yes >= 0 && $yes <=2) { return 'Emergent'; }
+          if ($yes >= 3 && $yes <=4) { return 'Diligent'; }
+          if ($yes >= 5 && $yes <=7) { return 'Proficient'; }
+          break;
+        case 'System risk management embedded as over arching contractual obligation for contractors/suppliers':
+          $nid = 122;
+          $q1 = capability_maturity_get_response($submissions, $nid, 1);
+          $q2 = capability_maturity_get_response($submissions, $nid, 2);
+          $q6 = capability_maturity_get_response($submissions, $nid, 6);
+          $responses = array($q1[0], $q2[0], $q6[0]);
+          $frequently = 0;
+          $always = 0;
+          $total = 0;
+          foreach ($responses as $response) {
+            if ($response == 'Frequently' || $response == 'Always') { $total++; }
+            if ($response == 'Frequently') { $frequently++; }
+            if ($response == 'Always') { $always++; }
+          }
+          $total = $frequently + $always;
+          if ($total = 0) { return 'Emergent'; }
+          if ($total >= 1 && $total <= 2) { return 'Diligent'; }
+          if ($total >= 3) { return 'Proficient'; }
+          break;
+        case 'Design of resilient systems via threat modeling and war gaming':
+          $nid = 121;
+          $q1 = capability_maturity_get_response($submissions, $nid, 1);
+          $q2 = capability_maturity_get_response($submissions, $nid, 2);
+          $q3 = capability_maturity_get_response($submissions, $nid, 3);
+          $q4 = capability_maturity_get_response($submissions, $nid, 4);
+          $q5 = capability_maturity_get_response($submissions, $nid, 5);
+          $q6 = capability_maturity_get_response($submissions, $nid, 6);
+          $q7 = capability_maturity_get_response($submissions, $nid, 7);
+          $responses = array($q1[0], $q2[0], $q3[0], $q4[0], $q5[0], $q6[0], $q7[0]);
+          $sometimes = 0; $frequently = 0; $always = 0;
+          $total = 0;
+          foreach ($responses as $response) {
+            if ($response == 'Sometimes' || $response == 'Frequently' || $response == 'Always') { $total++; }
+            if ($response == 'Sometimes') { $sometimes++; }
+            if ($response == 'Frequently') { $frequently++; }
+            if ($response == 'Always') { $always++; }
+          }
+          //$total = $sometimes + $frequently + $always;
+          if ($total >= 0 && $total <= 2) { return 'Emergent'; }
+          if ($total >= 3 && $total <= 4) { return 'Diligent'; }
+          if ($total >= 5 && $total <= 7) { return 'Proficient'; }
+          break;
+        case 'Risk mitigation':
+          $nid = 122;
+          $q3 = capability_maturity_get_response($submissions, $nid, 3);
+          if ($q3[0] == 'Seldom' || $q3[0] == 'Never') { return 'Emergent'; }
+          if ($q3[0] == 'Sometimes' || $q3[0] == 'Frequently') { return 'Diligent'; }
+          if ($q3[0] == 'Always') { return 'Proficient'; }
+          break;
+        case 'Defense against IT supply chain breaches':
+          $nid = 116;
+          $q1point4 = capability_maturity_get_response($submissions, $nid, 4);
+          $q1point5 = capability_maturity_get_response($submissions, $nid, 5);
+          $nid = 122;
+          $q7point4 = capability_maturity_get_response($submissions, $nid, 4);
+          $q7point5 = capability_maturity_get_response($submissions, $nid, 5);
+          $responses = array($q1point4[0], $q1point5[0], $q7point4[0], $q7point5[0]);
+          $total = 0;
+          foreach ($responses as $response) {
+            if ($response == 'Sometimes' || $response == 'Frequently' || $response == 'Always') { $total ++; }
+          }
+          if ($total == 0) { return 'Emergent'; }
+          if ($total >= 1 && $total <= 2) { return 'Diligent'; }
+          if ($total >= 3 && $total <= 4) { return 'Proficient'; }
+          break;
+      }
+      break;
+    case 'Tier 3: Operations':
+      switch ($component) {
+        case 'Validation of IT system components':
+          $nid = 118;
+          $q1 = capability_maturity_get_response($submissions, $nid, 1);
+          $q2 = capability_maturity_get_response($submissions, $nid, 2);
+          $responses = array($q1[0], $q2[0]);
+          $total = 0;
+          foreach ($responses as $response) {
+            if ($response == 'Frequently' || $response == 'Always') { $total++; }
+          }
+          if ($total == 0) { return 'Emergent'; }
+          if ($total == 1) { return 'Diligent'; }
+          if ($total == 2) { return 'Proficient'; }
+          break;
+        case 'Software configuration management systems and hardware certificates of traceability':
+          $nid = 118;
+          $q3 = capability_maturity_get_response($submissions, $nid, 3);
+          $q4 = capability_maturity_get_response($submissions, $nid, 4);
+          $q6 = capability_maturity_get_response($submissions, $nid, 6);
+          $q7 = capability_maturity_get_response($submissions, $nid, 7);
+          $q8 = capability_maturity_get_response($submissions, $nid, 8);
+          $q9 = capability_maturity_get_response($submissions, $nid, 9);
+          $q10 = capability_maturity_get_response($submissions, $nid, 10);
+          $responses = array($q3[0], $q4[0], $q6[0], $q7[0], $q8[0], $q9[0], $q10[0]);
+          $total = 0;
+          foreach ($responses as $response) {
+            if ($response == 'Sometimes' || $response == 'Frequently' || $response == 'Always') { $total++; }
+          }
+          if ($total >= 0 && $total <= 2) { return 'Emergent'; }
+          if ($total >= 3 && $total <= 4) { return 'Diligent'; }
+          if ($total >= 5 && $total <= 7) { return 'Proficient'; }
+          break;
+        case 'Supplier qualification and operational checks':
+          $nid = 119;
+          $q4point1 = capability_maturity_get_response($submissions, $nid, 1);
+          $q4point2 = capability_maturity_get_response($submissions, $nid, 2);
+          $q4point3 = capability_maturity_get_response($submissions, $nid, 3);
+          $q4point4 = capability_maturity_get_response($submissions, $nid, 4);
+          $q4point5 = capability_maturity_get_response($submissions, $nid, 5);
+          $q4point6 = capability_maturity_get_response($submissions, $nid, 6);
+          $nid = 123;
+          $q8point1 = capability_maturity_get_response($submissions, $nid, 1);
+          $q8point2 = capability_maturity_get_response($submissions, $nid, 2);
+          $q8point3 = capability_maturity_get_response($submissions, $nid, 3);
+          $q8point4 = capability_maturity_get_response($submissions, $nid, 4);
+          $q8point5 = capability_maturity_get_response($submissions, $nid, 5);
+          $q8point6 = capability_maturity_get_response($submissions, $nid, 6);
+          $responses = array($q4point1[0], $q4point2[0], $q4point3[0], $q4point4[0],
+                             $q4point5[0], $q4point6[0], $q8point1[0], $q8point2[0], 
+                             $q8point3[0], $q8point4[0], $q8point5[0], $q8point6[0]);
+          $total = 0;
+          foreach ($responses as $response) {
+            if ($response == 'Yes') { $total++; }
+          }
+          if ($total >= 0 && $total <= 4) { return 'Emergent'; }
+          if ($total >= 5 && $total <= 8) { return 'Diligent'; }
+          if ($total >= 9 && $total <= 12) { return 'Proficient'; }
+          break;
+        case 'Protocols to deal with counterfeit parts':
+          $nid = 118;
+          $q3point5 = capability_maturity_get_response($submissions, $nid, 5);
+          $nid = 120;
+          $q5point3 = capability_maturity_get_response($submissions, $nid, 3);
+          $q5point5 = capability_maturity_get_response($submissions, $nid, 5);
+          if (($q3point5[0] == 'Seldom' || $q3point5[0] == 'Never') &&
+              ($q5point3[0] == 'No' || $q5point5[0] == 'No')) {
+            return 'Emergent';
+          }
+          elseif (($q3point5[0] == 'Sometimes' || $q3point5[0] == 'Frequently') &&
+                  ($q5point3[0] == 'Yes' || $q5point5[0] == 'Yes')) {
+            return 'Diligent';
+          }
+          elseif (($q3point5[0] == 'Frequently' || $q3point5[0] == 'Always') &&
+                  ($q5point3[0] == 'Yes' && $q5point5[0] == 'Yes')) {
+            return 'Proficient';
+          }
+          break;
+      }
+      break;
+  }
+}
+
+// Removes the '__' delimiter from the dynamic form responses so they can be processed by the old method
+function convert_dynamic_response_to_static($value)
+{
+  $rc = $value;
+  if (strpos($value,'__')) {
+    $pieces = explode('__', $value);
+    $rc = $pieces[0];
+  }
+  return $rc;
+}
+
+function convert_dynamic_responses_to_static($values)
+{
+  $rc = $values;
+      foreach ($values as $vkey => $value) {
+          if (strpos($value,'__')) {
+            $pieces = explode('__', $value);
+            $rc[$vkey] = $pieces[0];
+          }
+      }
+      return $rc;
+}
+
+
+function capability_maturity_get_response($submissions, $nid, $question = 0, $cid = 0) {
+  //printr($question);
+  if (isset($submissions[$nid])) {
+    if (!$cid) {
+      $cids = capability_maturity_get_component_id($nid, $question);
+    }
+    if (is_array($cids)) {
+      $responses = array();
+      foreach ($cids as $cid) {
+        if (isset($submissions[$nid]->data[$cid])) {
+          $responses[]  = convert_dynamic_response_to_static($submissions[$nid]->data[$cid]['value'][0]);
+          //$responses[] = $submissions[$nid]->data[$cid]['value'][0];
+        }  
+      }
+      //printr($responses);
+      return $responses;
+    }
+    else {
+      if (isset($submissions[$nid]->data[$cids])) {
+        $response = convert_dynamic_responses_to_static($submissions[$nid]->data[$cids]['value']);
+        //$response = $submissions[$nid]->data[$cids]['value'];
+      }
+      //printr($response);
+      return isset($response) ? $response : FALSE;
+    }
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function capability_maturity_get_recommendation($tier, $group) {
+  switch ($tier) {
+    case 'Tier 1: Governance':
+      switch ($group) {
+        case 'Emergent':
+          return 'Need to formalize risk management process with an executive organization, program charter and standardized techniques for risk assessment, prioritization and mitigation.';
+          break;
+        case 'Diligent':
+          return 'Need to formalize risk management process with an executive organization, program charter and standardized techniques for risk assessment, prioritization and mitigation.';
+          break;
+        case 'Proficient':
+          return 'No recommendation';
+          break;
+        default:
+          return 'None (something went wrong).';
+          break;
+      }
+      break;
+    case 'Tier 2: Systems Integration':
+      switch ($group) {
+        case 'Emergent':
+          return 'Ramp up use of contractual mandatesto increase contractor/supplier disclosure and management of supply chain risk; need to establish Risk Registry to track risk mitigation activities.';
+          break;
+        case 'Diligent':
+          return 'Ramp up use of contractual mandatesto increase contractor/supplier disclosure and management of supply chain risk; need to establish Risk Registry to track risk mitigation activities.';
+          break;
+        case 'Proficient':
+          return 'No recommendation';
+          break;
+        default:
+          return 'None (something went wrong).';
+          break;
+      }
+      break;
+    case 'Tier 3: Operations':
+      switch ($group) {
+        case 'Emergent':
+          return 'Reduce liability by transitioning to trusted contractors/suppliers/ carriers; reducing or eliminating grey market purchases; and creating policies for reporting/disposing of suspect parts.';
+          break;
+        case 'Diligent':
+          return 'Reduce liability by transitioning to trusted contractors/suppliers/ carriers; reducing or eliminating grey market purchases; and creating policies for reporting/disposing of suspect parts.';
+          break;
+        case 'Proficient':
+          return 'No recommendation';
+          break;
+        default:
+          return 'None (something went wrong).';
+          break;
+      }
+      break;
+  }
+}

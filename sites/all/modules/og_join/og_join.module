@@ -1,0 +1,127 @@
+<?php
+
+/** Implements hook_menu() **/
+function og_join_menu() {
+  $menu = array();
+  
+  $initiative_entity = variable_get('settings_initiative_entity', 'initiative');
+  $menu[$initiative_entity . '/%node/join'] = array(
+    'title' => 'Join',
+    'title callback' => 'og_join_join_link_text',
+    'title arguments' => array(1),
+    'description' => 'Join le groupzor!',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_join_join_form', 1),
+    'access callback' => 'og_user_access_entity',
+    'access arguments' => array('subscribe', 'node', 1),
+    'type' => MENU_LOCAL_ACTION,
+  );
+  /*$menu[$initiative_entity . '/%node/admin/join'] = array(
+    'title' => 'Membership',
+    'description' => 'Things related to joining and being a member of this group.',
+    ''
+  );*/
+  
+  return $menu;
+}
+
+/** Title callback for the local actions which take the user to the join pages **/
+function og_join_join_link_text($node) {
+  //$node = node_load($nid);
+  if (1 == 0  && isset($node->field_settings_join_link_text['und']) && !empty($node->field_settings_join_link_text['und'][0]['value'])) {
+    return t($node->field_settings_join_link_text['und'][0]['value'], array('!initiative' => $node->title));
+  }
+  else {
+    return t(helpers_get_field_default_value('node', 'field_settings_join_link_text', 'initiative'),
+             array('!initiative_title' => $node->title));
+  }
+}
+
+/** Implements hook_permission() **/
+function og_join_og_permission() {
+  return array(
+    'ask to join groups' => array('title' => t('Ask to join groups')),
+    'invite users to join' => array('title' => t('Invite users to join')),
+  );
+}
+
+/** Definte the form where users can ask to join the group.
+ *  Right now we just have a little button they click if they want to join.
+ *  In the future maybe we can add new fields here, including initial values for profile settings.
+ */
+function og_join_join_form($form, &$form_state, $node) {
+  //drupal_set_message(print_r($node, 1));
+  //$node = node_load($nid);
+  if (isset($node->field_settings_join_message['und']) && !empty($node->field_settings_join_message['und'][0]['value'])) {
+    $message = $node->field_settings_join_message['und'][0]['value'];
+  }
+  else {
+    $message = variable_get('settings_default_join_message', t('Welcome to le groupzor!'));
+  }
+  $form['join_message'] = array(
+    '#type' => 'item',
+    '#markup' => $message,
+  );
+  
+  $form['group'] = array('#type' => 'value', '#value' => og_get_group('node', $node->nid));
+  
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Ask to join this group'),
+  );
+  
+  return $form;
+}
+
+/** A rules action which sends an email to all users who belong to a certain group and have
+ *  certain roles within that group.
+ */
+function og_join_action_mail_to_users_of_group_role($group, $roles, $subject, $message, $from) {
+  //printr(func_get_args());
+  // first find out which users get an email!
+  if (!empty($roles)) {
+    $query = "SELECT u.uid, u.mail FROM {users} u
+              LEFT JOIN {og_users_roles} our ON u.uid = our.uid
+              WHERE our.gid = :gid AND our.rid IN (:rids)";
+    $result = db_query($query, array(':gid' => $group->gid, ':rids' => array(implode($roles))));
+    $emails = $result->fetchAllKeyed();
+    $params = array(
+      'subject' => $subject,
+      'message' => $message,
+    );
+    foreach ($emails as $uid => $email) {
+      //$user = user_load($uid);
+      //$profile = profile2_load_by_user($user, 'moderation');
+      drupal_mail('og_join', 'og_join_send_to_roles', $email, language_default(), $params, $from);
+    }
+    //drupal_set_message(gprint_r($users));
+  }
+}
+
+/** Helper function to retrieve a list of roles that groups may have **/
+function og_join_roles() {
+  module_load_include('module', 'og');
+  return og_roles();
+}
+
+/** I'm not really sure why this needs to be here. Drupal's mail system is confusing as all fuck **/
+function og_join_mail($key, &$message, $params) {
+  if ($key == 'og_join_send_to_roles') {
+    
+  }
+}
+
+/********** Form submit functions **********/
+function og_join_join_form_submit(&$form, &$form_state) {
+  $group = $form_state['values']['group'];
+  //$account = $form_state['values']['account'];
+
+  $state = og_user_access($group->gid, 'subscribe without approval') ? OG_STATE_ACTIVE : OG_STATE_PENDING;
+  $values = array(
+    //'entity' => $account,
+    'state' => $state,
+    //'membership type' => $form_state['values']['membership_type'],
+    //'membership fields' => $form_state['values']['membership_fields'],
+  );
+  og_group($group->gid, $values);
+}

@@ -1,0 +1,9 @@
+name = OG Invite
+description = Handles group invitations.
+core = 7.x
+version = 7.x-1.0-dev
+package = Organic groups
+files[] = og_invite.views.inc
+files[] = og_invite_handler_field_user.inc
+files[] = og_invite_handler_field_accept_link.inc
+files[] = og_invite_handler_field_decline_link.inc

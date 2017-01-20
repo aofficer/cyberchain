@@ -1,0 +1,44 @@
+<?php
+
+/** Implements hook_schema() **/
+function og_userpoints_schema() {
+  $schema = array();
+  
+  $schema['og_userpoints_levelup'] = array(
+    'description' => t('Stores how many points are needed to level up in groups.'),
+    'fields' => array(
+      'gid' => array(
+        'description' => t('Unique ID of the group.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'rid' => array(
+        'description' => t('Unique ID of the role.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'points_needed' => array(
+        'description' => t('The amount of points need to level up to that role.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'clout' => array(
+        'description' => t('The amount of influence a user with this role should have.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0
+      ),
+    ),
+    'primary key' => array('gid', 'rid'),
+    'indexes' => array('points' => array('points_needed')),
+  );
+  
+  return $schema;
+}

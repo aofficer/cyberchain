@@ -1,0 +1,169 @@
+<?php
+
+/** Implements hook_menu() **/
+function og_userpoints_menu() {
+  $menu = array();
+  
+  $menu['initiative/%node/admin/points'] = array(
+    'title' => 'Points',
+    'title callback' => 'og_userpoints_title_callback',
+    'title arguments' => array(1),
+    'description' => 'Points settings for this group',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_userpoints_points_settings', 1),
+    'access callback' => 'og_userpoints_access_by_node',
+    'access arguments' => array('administer group points', 1),
+    'file' => 'og_userpoints.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+  
+  return $menu;
+}
+
+/** Don't know wtf this is even for **/
+function og_userpoints_title_callback($node) {
+  //print $node->title;
+  //drupal_set_title($node->title . ' / Admin');
+  
+  return t('Points');
+}
+
+/** Implements hook_permission() **/
+function og_userpoints_og_permission() {
+  return array('administer group points' => array('title' => t('Administer group points')));
+}
+
+/** Pass a node to this funciton and see if yo perm is kewl **/
+function og_userpoints_access_by_node($perm, $node) {
+  $group = og_get_group('node', $node->nid);
+  //drupal_set_message('<pre>' . print_r($group, 1) . '</pre>');
+  if (!empty($group)) {
+    return og_user_access($group->gid, $perm);
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/** Implements hook_group_insert()
+ *  When a group is created we want to automatically create a taxonomy term in the
+ *  Userpoints vocabulary which associates the term with the group.
+ *  The term later gets used to categorize Userpoints transactions.
+ */
+function og_userpoints_group_insert(OgGroup $og_group) {
+  //drupal_set_message('<pre>' . print_r($og_group, 1) . '</pre>');
+  $term = new StdClass();
+  $term->vid = userpoints_get_vid();
+  $term->name = $og_group->label;
+  $term->field_userpoints_group['und'][0]['gid'] = $og_group->gid;
+  //$term->field_userpoints_group['und']['state'] = 1;
+  //$term->field_userpoints_group['und']['created'] = time();
+  taxonomy_term_save($term);
+}
+
+/** Implements hook_group_delete(). Remove the Userpoints term associated with the group. **/
+function og_userpoints_group_delete(OgGroup $og_group) {
+  $query = "SELECT entity_id FROM {field_data_field_userpoints_group}
+            WHERE field_userpoints_group_gid = :gid
+              AND entity_type = 'taxonomy_term'";
+  $tid = db_query($query, array(':gid' => $og_group->gid))->fetchField();
+  
+  if ($tid) {
+    taxonomy_term_delete($tid);
+  }
+}
+
+/** Return a term ID given a group ID **/
+function og_userpoints_get_tid($gid) {
+  $tid = db_query("SELECT entity_id FROM {field_data_field_userpoints_group}
+                   WHERE field_userpoints_group_gid = :gid", array(':gid' => $gid))->fetchField();
+                   
+  return $tid;
+}
+
+/** Return a group ID given a term ID **/
+function og_userpoints_get_gid($tid) {
+  $gid = db_query("SELECT field_userpoints_group_gid FROM {field_data_field_userpoints_group}
+                   WHERE entity_id = :tid", array(':tid' => $tid))->fetchField();
+                   
+  return $gid;
+}
+
+/** Implements hook_og_ui_get_group_admin() **/
+function og_userpoints_og_ui_get_group_admin() {
+  return array('points_settings' => array(
+    'title' => t('Points settings'),
+    'description' => t('Administer settings related to points and leveling up.'),
+    'href' => 'points',
+  ));
+}
+
+/** Determine how many points are needed to levelup to a certain role **/
+function og_userpoints_get_points_needed($gid, $rid) {
+  $points = db_query("SELECT points_needed FROM {og_userpoints_levelup}
+                   WHERE gid = :gid AND rid = :rid", array(':gid' => $gid, ':rid' => $rid))->fetchField();
+  return $points ? $points : 5;
+}
+
+/** Retrieve an array of points needed to levelup to a certain role given a group **/
+function og_userpoints_points_needed_multiple($gid) {
+  $result = db_query("SELECT rid, points_needed FROM {og_userpoints_levelup}
+                      WHERE gid = :gid", array(':gid' => $gid));
+  return $result->fetchAllKeyed();
+}
+
+/** Examine a userpoints transaction and determine whether or not a role should be granted or revoked
+ *  from the user who received the points. Then do the granting/revoking.
+ */
+function og_userpoints_levelup($txn) {
+  // get the group associated with the transaction
+  $uid = $txn->uid;
+  $gid = og_userpoints_get_gid($txn->tid);
+  // now load all the roles from that group and their respective points needed
+  $points_needed = og_userpoints_points_needed_multiple($gid);
+  $current_points = userpoints_get_current_points($uid, $txn->tid);
+  // now cycle through the points needed array and see which roles the user is eligible for
+  foreach ($points_needed as $rid => $points) {
+    if ($current_points >= $points) {
+      // levelup
+      og_role_grant($gid, $uid, $rid);
+    }
+    else {
+      og_role_revoke($gid, $uid, $rid);
+    }
+  }
+}
+
+/** Implements hook_admin_paths() **/
+function og_userpoints_admin_paths() {
+  return array(
+    'node/*/group/*' => TRUE,
+  );
+}
+
+/** Retrieve the clout associated with a role from a particular group **/
+function og_userpoints_get_clout($gid, $rid) {
+  $clout = db_query("SELECT clout FROM {og_userpoints_levelup}
+                     WHERE gid = :gid AND rid = :rid", array(':gid' => $gid, ':rid' => $rid))->fetchField();
+  return $clout ? $clout : 50;
+}
+
+/** Don't know **/
+function og_userpoints_determine_vote_up_points($upvotee, $upvoter = 0) {
+  if (!$upvoter) {
+    global $user;
+    $upvoter = $user->uid;
+  }
+  
+  
+}
+
+/** Don't know **/
+function og_userpoints_userpoints($op, &$params) {
+  switch ($op) {
+    case 'points before':
+      
+      break;
+  }
+  printr($params);
+}

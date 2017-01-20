@@ -1,0 +1,5 @@
+name = OG Join
+description = Steezes up the joining of groups. This will be important for a plurtastical site like this one.
+core = 7.x
+version = 7.x-1.0-dev
+package = Organic groups

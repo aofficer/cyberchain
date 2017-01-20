@@ -1,0 +1,220 @@
+<?php
+
+/** Implements hook_menu() **/
+function og_settings_menu() {
+  $menu = array();
+  
+  $initiative_entity = variable_get('settings_initiative_entity', 'initiative');
+  $menu[$initiative_entity . '/%node/admin/settings'] = array(
+    'title' => 'Settings',
+    'description' => 'Group level settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_settings_settings_form', 1),
+    'access callback' => 'og_user_access_entity',
+    'access arguments' => array('administer group', 'node', 1),
+    'type' => MENU_LOCAL_TASK,
+  );
+  
+  return $menu;
+}
+
+/** Define the form to be used for global initiative settings **/
+function og_settings_settings_form($form, &$form_state, $node) {
+  $form['#nid'] = $node->nid;
+  field_attach_form('node', $node, $form, $form_state);
+  //printr($form);
+  og_settings_remove_non_settings($form);
+  og_settings_set_defaults($form, $node);
+  
+  //printr($form);
+  
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+    '#weight' => 10000,
+  );
+  
+  //printr($form);
+  
+  return $form;
+}
+
+/** In some cases we want to just return a node ID instead of a node object like in node_load() **/
+function og_settings_node_load($nid) {
+  if (is_numeric($nid)) {
+    $node = node_load($nid);
+    if ($node) {
+      return $node->nid;
+    }
+  }
+  
+  return FALSE;
+}
+
+/** Determine whether or not the field is a global initiative setting **/
+function og_settings_is_a_setting($field_name) {
+  return helpers_is_a_setting($field_name);
+  if (substr($field_name, 0, 14) == 'field_settings') {
+    return TRUE;
+  }
+  
+  return FALSE;
+}
+
+/** Determine which FAPI type a field instance should take **/
+function og_settings_determine_form_type($instance) {
+  strtr($instance['widget']['type'], array($instance['widget']['module'] . '_' => ''));
+}
+
+/** Get rid of all form elements which are not settings **/
+function og_settings_remove_non_settings(&$form) {
+  $instances = field_info_instances('node', 'initiative');
+ // printr($instances);
+  foreach ($instances as $field_name => $instance) {
+    if (substr($field_name, 0, 14) != 'field_settings') {
+      //print $field_name;
+      unset($form[$field_name]);
+    }
+  }
+}
+
+/** Every field has a key which you can use to extract its "value".
+ *  This is actually defined somewhere by the field, so this function will need to
+ *  change in order to take advantage of that. **/
+function og_settings_get_field_key($field_name) {
+  switch ($field_name) {
+    case 'field_settings_initiative_leader':
+      return 'target_id';
+      break;
+    default:
+      return 'value';
+  }
+}
+
+/** Implements hook_og_role_insert().
+ *  When a new role is created, we want to create a corresponding field which defines
+ *  that role's clout within the group. This field will be a setting which administrators can later adjust. **/
+function og_settings_og_role_insert($role) {
+  // when a new role is created we want to create corresponding fields
+  $field = array(
+    'field_name' => 'field_settings_clout_' . $role->rid,
+    'type' => 'number_float',
+  );
+  field_create_field($field);
+  $instance = array(
+    'field_name' => 'field_settings_clout_' . $role->rid,
+    'entity_type' => 'node',
+    'bundle' => 'initiative',
+    'label' => $role->name . ' clout',
+    //'und' => array(array('default_value' => 1)),
+    'default_value' => array(array('value' => 1)),
+  );
+  field_create_instance($instance);
+  og_settings_mark_as_special($instance['field_name'], 'initiative_setting_global');
+  //printr(field_info_instance('node', $instance['field_name'], 'initiative'));
+  $groups = field_group_read_groups(array(
+    'name' => 'node',
+    'bundle' => 'initiative',
+    'view_mode' => 'full'));
+  //printr($groups);
+  //return;
+  $group = $groups['node']['initiative']['form']['group_clout'];
+  $group->children[] = $instance['field_name'];
+  field_group_group_save($group);
+}
+
+/** Implements hook_og_role_delete() **/
+function og_settings_og_role_delete($role) {
+  field_delete_field('field_settings_clout_' . $role->rid);
+}
+
+/** Go through and set defaults based on instance settings **/
+function og_settings_set_defaults(&$form, $node) {
+  $instances = field_info_instances('node', 'initiative');
+  //printr($node);
+  //printr($form);
+  //printr($instances);
+  foreach ($node as $field_name => $field) {
+    if (helpers_is_a_setting($field_name)) {
+      if (empty($field)) {
+        // we gotta set a defaultzor
+        $instance = $instances[$field_name];
+        $field_key = helpers_get_field_key($field_name);
+        $default_value = $instance['default_value'][0][$field_key];
+        $form[$field_name]['und'][0][$field_key]['#default_value'] = helpers_derp_default_value($field_name, $default_value);
+      }
+    }
+  }
+}
+
+function og_settings_derp_default_value($field_name, $value) {
+  switch ($field_name) {
+    case 'field_settings_initiative_leader':
+      $user = user_load($value);
+      return $user->name . ' (' . $user->uid . ')';
+      break;
+    default:
+      return $value;
+  }
+}
+
+/** Implements hook_form_FORM_ID_alter() 
+ *  We need a way to definte special fields so that we can identify them in other parts of the site's code **/
+function og_settings_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form_id) {
+  if ($form['#instance']['bundle'] == 'initiative') {
+    printr($form['#instance']);
+    // add our OWN settings to it. MUAHAHAHAHAHA!
+    $field_name = $form['#field']['field_name'];
+    $special_field_types_map = variable_get('special_field_types_map', array());
+    //printr($special_field_types_map);
+    $special_field_types = array(
+                                  'none' => t('None'),
+                                  'initiative_setting_global' => t('Global initiative setting'),
+                                  'initiative_setting_personal' => t('Personal intiiative setting'),
+                                );
+    $form['field']['settings']['special_field_type'] = array(
+      '#type' => 'radios',
+      '#title' => t('Special field type'),
+      '#options' => $special_field_types,
+      '#default_value' => isset($special_field_types_map[$field_name]) ? $special_field_types_map[$field_name] : 'none',
+    );
+    $form['#submit'][] = 'og_settings_special_field_type_submit';
+  }
+  //printr($form);
+}
+
+/** Mark a field as being a special snowflake **/
+function og_settings_mark_as_special($field_name, $value) {
+  $special_field_types_map = variable_get('special_field_types_map', array());
+  $special_field_types_map[$field_name] = $value;
+  variable_set('special_field_types_map', $special_field_types_map);
+}
+
+
+/********** Form submit functions **********/
+
+function og_settings_settings_form_submit(&$form, &$form_state) {
+  //printr($form_state['values']);
+  //return;
+  $node = node_load($form['#nid']);
+  //printr($node);
+  //return;
+  // first the automatic jaont
+  foreach ($form_state['values'] as $field_name => $value) {
+    if (helpers_is_a_setting($field_name)) {
+      $field_key = helpers_get_field_key($field_name);
+      $node->{$field_name}['und'][0][$field_key] = $form_state['values'][$field_name]['und'][0][$field_key];
+    }
+  }
+  // then some custom jaont
+  $node->uid = $form_state['values']['field_settings_initiative_leader']['und'][0]['target_id'];
+  /*$node->field_initiative_join_message['und'][0]['value'] = $form_state['values']['join_message'];
+  $node->field_initiative_join_link_text['und'][0]['value'] = $form_state['values']['join_link_text'];*/
+  node_save($node);
+  
+  drupal_set_message('Settings saved.');
+}
+
+function og_settings_special_field_type_submit($form, &$form_state) {
+  og_settings_mark_as_special($form_state['values']['instance']['field_name'], $form_state['values']['field']['settings']['special_field_type']);
+}

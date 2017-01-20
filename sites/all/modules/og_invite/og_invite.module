@@ -1,0 +1,258 @@
+<?php
+
+/** Implements hook_menu() **/
+function og_invite_menu() {
+  $menu = array();
+  
+  $menu['initiative/%node/invite'] = array(
+    'title' => 'Invite someone',
+    'description' => 'Invite someone to le groupzor',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('og_invite_invite_form', 1),
+    'access callback' => 'og_user_access_entity',
+    'access arguments' => array('invite users to join', 'node', 1),
+    'type' => MENU_LOCAL_ACTION,
+  );
+  $menu['og-invite/invite-response/%og_invite_hash/%'] = array(
+    'title' => 'Invite response',
+    'description' => 'Callback to respond to invitations.',
+    'page callback' => 'og_invite_invite_response',
+    'page arguments' => array(2, 3),
+    'access arguments' => array('access content'),
+    'load arguments' => array(3),
+    'type' => MENU_CALLBACK,
+  );
+  
+  return $menu;
+}
+
+/** Define the form which allows users to invite other users to join the initiative **/
+function og_invite_invite_form($form, &$form_state, $node) {
+  $form['member_invitees'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Invite people who are already members of the site'),
+    '#description' => t('Type their usernames here, separated by commas.'),
+    '#autocomplete_path' => 'user/autocomplete/multiple',
+  );
+  $form['non_member_invitees'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Or invite people who are not yet members of the site'),
+    '#description' => t('Enter their emails, one per line, here.'),
+  );
+  $form['node'] = array(
+    '#type' => 'value',
+    '#value' => $node,
+  );
+  $group = og_get_group('node', $node->nid);
+  $form['group'] = array(
+    '#type' => 'value',
+    '#value' => $group,
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Send invites'),
+  );
+  
+  return $form;
+}
+
+/** Check to see if a user is a member of a group. There is probably already a function that does this **/
+function og_invite_is_group_member($gid, $uid) {
+  $membership = og_get_group_membership($gid, 'user', $uid);
+  
+  return $membership ? TRUE : FALSE;
+}
+
+/** Determine the status of an invitation. Returns FALSE if the user has not been invited. **/
+function og_invite_invite_status($member_status, $gid, $value) {
+  switch ($member_status) {
+    case 'member':
+      $status = db_query("SELECT status FROM {og_invite} WHERE gid = :gid AND invitee = :invitee", array(':gid' => $gid, ':invitee' => $value))->fetchField();
+      break;
+    case 'non_member':
+      $status = db_query("SELECT status FROM {og_invite} WHERE gid = :gid AND email = :email", array(':gid' => $gid, ':email' => $value))->fetchField();
+      break;
+    default:
+      return FALSE;
+  }
+
+  return $status;
+}
+
+/** Act on a repsonse to an invitation. The user will have gone to the response URL and this funciton will be fired **/
+function og_invite_invite_response($invite, $response) {
+  $group = og_load($invite->gid);
+  if ($invite->invitee) {
+    // user already exists
+    switch ($response) {
+      case 'accept':
+        $status = 'accepted';
+        $message = t('Welcome to the group.');
+        $goto = 'initiative/' . $group->etid;
+        break;
+      case 'decline':
+        $status = 'declined';
+        $message = t("You've decined to join the group.");
+        $goto = '/node';
+        break;
+    }
+  }
+  else {
+    // user doesn't exist yet, make them register with the site first, then add them to the group
+    // if they accept then we'll update their invite status accordingly in the db
+    // and then when they register with the site we'll check for a corresponding email and at them to the group
+    switch ($response) {
+      case 'accept':
+        $status = 'accepted';
+        $message = t("You've accepted the invitation to join the group. After you register with the site you'll be a member.");
+        $goto = 'user/register';
+        break;
+      case 'decline':
+        $status = 'declined';
+        $message = t('Aw :(');
+        $goto = '/node';
+        break;
+    }
+  }
+  
+  $fields = array('status' => $status, 'responded' => REQUEST_TIME);
+  db_update('og_invite')->fields($fields)->condition('hash', $invite->hash, '=')->execute();
+  drupal_set_message($message);
+  drupal_goto($goto);
+}
+
+/** Validate the hash string given in the URL.
+ *  We expect an md5 hash, thus 32 characters
+ **/
+function og_invite_hash_load($hash, $response) {
+  //return 'lol';
+  if (in_array($response, array('accept', 'decline'))) {
+    if (strlen($hash) == 32) {
+      $invite = db_query("SELECT * FROM {og_invite} WHERE hash = :hash", array(':hash' => $hash))->fetchObject();
+      return $invite;
+    }
+  }
+  
+  return FALSE;
+}
+
+/** Implements hook_user_insert()
+ *  When a user registers with the site, we want to check to to see if they have previously accepted any
+ *  invitations to join any groups, and add them to those groups once their account is created.
+ *  This is done purely by comparing the email address used to register with the site. **/
+function og_invite_user_insert(&$edit, $account, $category) {
+  $groups = db_query("SELECT gid FROM {og_invite}
+                      WHERE email = :email AND status = 'accepted' AND invitee = 0",
+                      array(':email' => $account->mail))->fetchCol();
+
+  if (!empty($groups)) {
+    foreach ($groups as $gid) {
+      og_group($gid, array('entity type' => 'user', 'entity' => $account));
+    }
+  }
+}
+
+/** Implements hook_user_delete()
+ *  Wipe any invitations so the user can be reinvited should they decide to come crawling back.
+ **/
+function og_invite_user_delete($account) {
+  db_delete('og_invite')->condition(db_or()->condition('invitee', $account->uid)->condition('email', $account->mail))->execute();
+}
+
+/** Implements hook_views_api() **/
+function og_invite_views_api() {
+  return array(
+    'api' => 3,
+  );
+}
+
+/********** Form validation functions **********/
+function og_invite_invite_form_validate($form, &$form_state) {
+  $invitees = array();
+  
+  $gid = $form_state['values']['group']->gid;
+  $member_invitees = drupal_explode_tags($form_state['values']['member_invitees']);
+  if (!empty($member_invitees)) {
+    foreach ($member_invitees as $username) {
+      // check that the user exists and is not already a member of the group
+      // and that an invitation for the user does not already exist
+      // then put them in the $invitees array
+      $user = user_load_by_name($username);
+      if ($user) {
+        if (!og_invite_is_group_member($gid, $user->uid)) {
+          if ($invite_status = !og_invite_invite_status('member', $gid, $user->uid)) {
+            $invitees['members'][] = $user->uid;
+          }
+          else {
+            form_set_error('member_invitees', t('!username has already been invited to this group.', array('!username' => $username)));
+          }
+        }
+        else {
+          form_set_error('member_invitees', t('!username is already a member of this group.', array('!username' => $username)));
+        }
+      }
+      else {
+        form_set_error('member_invitees', t('!username is not a valid user.', array('!username' => $username)));
+      }
+    }
+  }
+  
+  $non_member_invitees = explode("\r\n", $form_state['values']['non_member_invitees']);
+  if (!empty($non_member_invitees) && !empty($non_member_invitees[0])) {
+    foreach ($non_member_invitees as $email) {
+      // check that the email is valid and that there doesn't already exist an invite for this email
+      if (valid_email_address($email)) {
+        if (!og_invite_invite_status('non_member', $gid, $email)) {
+          $invitees['non_members'][] = $email;
+        }
+        else {
+          form_set_error('non_member_invitees', t('An invite has already been sent to !email', array('!email' => $email)));
+        }
+      }
+      else {
+        form_set_error('non_member_invitees', t('!email is an invalid email address', array('!email' => $email)));
+      }
+    }
+  }
+
+  //printr($invitees);return;
+  
+  $form_state['values']['invitees'] = $invitees;
+}
+
+/********** Form submit functions **********/
+function og_invite_invite_form_submit($form, &$form_state) {
+  // at this point we can assume that all invites are valid and can be inserted in the database
+  $gid = $form_state['values']['group']->gid;
+  global $user; $inviter = $user;
+  foreach ($form_state['values']['invitees'] as $invitee_type => $values) {
+    switch ($invitee_type) {
+      case 'members':
+        foreach ($values as $uid) {
+          $hash = md5(uniqid());
+          $invitee = user_load($uid);
+          $fields = array('gid' => $gid, 'invitee' => $invitee->uid, 'inviter' => $inviter->uid,
+                          'email' => '', 'status' => 'extended', 'hash' => $hash,
+                          'extended' => REQUEST_TIME, 'responded' => 0);
+          $invite_id = db_insert('og_invite')->fields($fields)->execute();
+          if ($invite_id) {
+            drupal_set_message(t('Invitation sent out to user !user', array('!user' => theme('username', array('account' => $invitee)))));
+          }
+        }
+        break;
+      case 'non_members':
+        foreach ($values as $email) {
+          $hash = md5(uniqid());
+          //printr($email);
+          $fields = array('gid' => $gid, 'invitee' => 0, 'inviter' => $inviter->uid,
+                          'email' => $email, 'status' => 'extended', 'hash' => $hash,
+                          'extended' => REQUEST_TIME, 'responded' => 0);
+          $invite_id = db_insert('og_invite')->fields($fields)->execute();
+          if ($invite_id) {
+            drupal_set_message(t('Invitation sent out to !email', array('!email' => $email)));
+          }
+        }
+        break;
+    }
+  }
+}

@@ -1,0 +1,200 @@
+<?php
+
+/***********************************************
+ * Sometimes the default workflow in Drupal is not ideal. Sometimes we'd like to be redirected
+ * different places after a form is submitted, for example. Or we want the node creation form
+ * to look different for different users. This module is responsible for tweaking that kind of
+ * functionality. This is similar to the UI Steez module, but less superficial.
+
+/** Implements hook_init() **/
+function workflow_steez_init() {
+  //printr($_SESSION['messages']);
+}
+
+/** Implements hook_form_FORM_ID_alter() **/
+function workflow_steez_form_initiative_node_form_alter(&$form, &$form_state, $form_id) {
+  //printr($form);
+  //print $form_id;
+  global $user;
+  //if (!user_access('administer content') ) {
+  if (!user_access('wut')) {
+    //print 'l';
+    // we're going to make this form more appropriate for le peons
+    $instances = field_info_instances('node', 'initiative');
+    $dont_hide = array('field_document_author',
+                       'field_it_components', 'field_key_actors', 'field_framework_attributes_addre',
+                       'field_risk_management_practices', 'field_document_name');
+    foreach ($instances as $field_name => $instance) {
+      if (helpers_is_a_group_profile_field($field_name)) {
+        $form[$field_name]['und']['#disabled'] = TRUE;
+      }
+      if (!in_array($field_name, $dont_hide)) {
+        $id = '#edit-' . strtolower(strtr($field_name, array('_' => '-')));
+        //print $id;
+        drupal_add_css($id . ' { display: none; }', array('type' => 'inline'));
+      }
+    }
+    // we need to hide field groups too
+    $groups = field_group_info_groups('node', 'initiative', 'form');
+    //printr($groups);
+    $dont_hide_groups = array();
+    foreach ($groups as $group_name => $group) {
+      if (!in_array($group_name, $dont_hide_groups)) {
+        //print $group_name;
+        $id = '#node_initiative_form_' . $group_name;
+        drupal_add_css($id . ' {display: none;}', array('type' => 'inline'));
+      }
+    }
+    
+    // we just want everything to be blank, so remove the default value for the description
+    $form['field_settings_initiative_desc']['und'][0]['value']['#default_value'] = '';
+    
+    $form['actions']['submit']['#value'] = t('Create initiative');
+    $form['actions']['submit']['#submit'][] = 'workflow_steez_initiative_submit';
+    //drupal_set_message(printr($instances));
+  }
+  //printr($form);
+}
+
+function workflow_steez_form_webform_client_form_alter(&$form, &$form_state, $form_id) {
+  //printr($form);
+}
+
+/** Implements hook_form_FORM_ID_alter() **/
+function workflow_steez_form_webform_node_form_alter(&$form, &$form_state, $form_id) {
+  
+  $form['#submit'][] = 'workflow_steez_redirect_to_survey_pages';
+}
+
+function workflow_steez_redirect_to_survey_pages($form, &$form_state) {
+  global $user;
+  
+  //$form_state['redirect'] =
+}
+
+function workflow_steez_node_view($node, $view_mode, $langcode) {
+  global $user;
+  
+  switch ($node->type) {
+    case 'survey':
+      /*
+      $order = array(111, 144, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125);
+      module_load_include('inc', 'webform', 'includes/webform.submissions');
+      foreach ($order as $nid) {
+        if ($nid != $node->nid) {
+          // check if the survey has been submitted
+          //printr($nid);
+          $submission = webform_get_submissions(array('nid' => $nid, 'uid' => $user->uid, 'is_draft' => 0));
+          //printr($submission);
+          if (!$submission) {
+            //printr($nid);
+            drupal_set_message(t('You must complete all the previous assessments before you can take !assessment',
+                                  array('!assessment' => $node->title)));
+            drupal_goto('assessments/' . $node->field_assessment_part['und'][0]['value']);
+          }
+        }
+        else {
+          break;
+        }
+      }
+      */
+      
+      //printr($node);
+      // remove default message set by webform when use has already taken the assessment
+      if (!empty($_SESSION['messages'])) {
+        foreach ($_SESSION['messages'] as $type => $messages) {
+          if ($type == 'error' || 1==1) {
+            foreach ($messages as $index => $message) {
+              //print strlen("You have already submitted this form.");
+              if (substr($message, 0, 37) === "You have already submitted this form.") {
+                //print 'wut';
+                //$_SESSION['messages'][$type][$index] = t("You've already submitted this form. !back",
+                //                                          array('!back' => l(t('Back to assessments.'), 'assessments')));
+              }
+            }
+          }
+        }
+      }
+      $sid = db_query("SELECT sid FROM {webform_submissions} WHERE nid = :nid AND uid = :uid AND is_draft = 0 ORDER BY submitted DESC LIMIT 1",
+                       array(':nid' => $node->nid, ':uid' => $user->uid))->fetchField();
+      if ($sid) {
+        drupal_goto('node/' . $node->nid . '/submission/' . $sid);
+        //module_load_include('inc', 'webform', 'includes/submissions');
+        //$submission = webform_get_submission($node->nid, $sid);
+      }
+      break;
+  
+  case 'document':
+    // redirect admins to the edit page
+    if (user_access('administer content')) {
+      drupal_goto('node/' . $node->nid . '/edit');
+    }
+    break;
+  }
+}
+
+/** Implements hook_form_alter() **/
+function workflow_steez_form_alter(&$form, &$form_state, $form_id) {
+  //print $form_id;
+  //printr($form);
+  $bundles = helpers_get_initiative_audience_bundles();
+  //printr($form);
+  if (isset($form['#node_edit_form'])) {
+    if (in_array($form['type']['#value'], $bundles)) {
+      $form['#submit'][] = 'workflow_steez_initiative_content_redirect';
+      $form['actions']['submit']['#submit'][] = 'workflow_steez_initiative_content_redirect';
+      //print 'derp';
+    }
+    
+    if (in_array($form['type']['#value'], webform_variable_get('webform_node_types_primary'))) {
+      if (empty($form['#node']->nid)) {
+        $form['actions']['submit']['#value'] = t('Continue');
+      }
+    }
+  }
+  //printr($form);
+}
+
+function workflow_steez_initiative_submit($form, &$form_state) {
+  $form_state['redirect'] = 'initiative/' . $form_state['nid'];
+  //printr($form_state['values']);
+}
+
+function workflow_steez_initiative_content_redirect($form, &$form_state) {
+  //printr($form_state['values']);
+  //return;
+  //watchdog('wfs', '<pre>' . print_r($form_state, 1) . '</pre>');
+  /*if ($form['type']['#value'] != 'webform') {
+    $gid = $form_state['values']['group_audience']['und'][0]['gid'];
+    $initiative = og_load_entity_from_group($gid);
+    $form_state['redirect'] = 'initiative/' . $initiative->nid . '/node/' . $form_state['values']['nid'];
+    //$form_state['redirect'] = 
+  }*/
+}
+
+/** Implements hook_node_presave() **/
+function workflow_steez_node_presave($node) {
+  switch ($node->type) {
+    case 'initiative':
+      // make sure the initiative leader field value is set
+      $node->field_settings_initiative_leader['und'][0]['target_id'] = $node->uid;
+      break;
+  }
+}
+
+/** Implements hook_menu_alter() **/
+function workflow_steez_menu_alter(&$items) {
+
+}
+
+/** Implements hook_ctools_plugin_directory() **/
+function workflow_steez_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'ctools') {
+    return 'plugins/' . $plugin;
+  }
+}
+
+// return the profile fields needed to take a survey, keyed by profile type
+function workflow_steez_get_required_profile_fields() {
+  return array('basics' => array('field_basics_industry_size', 'field_basics_industry_type'));
+}

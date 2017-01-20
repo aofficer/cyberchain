@@ -1,0 +1,59 @@
+<?php
+
+/** Implements hook_form_FORM_ID_alter() **/
+function executive_initiative_form_webform_component_edit_form_alter(&$form, &$form_state, $form_id) {
+  print_r($form);
+  //print $form_id;
+  if ($form['type']['#value'] != 'fieldset') {
+    $points = array();
+    for ($i = 0; $i <= 100; $i++) {
+      $points[$i] = $i;
+    }
+    $default_function = executive_initiative_get_function($form['nid']['#value'], $form['cid']['#value']);
+    //print_r($default_function);
+    $form['executive_initiative_function'] = array(
+      '#type' => 'select',
+      '#title' => t('Function'),
+      '#description' => t('Which Executive Initiative function is this question on?'),
+      '#options' => array(1 => 1, 2 => 2, 3 => 3, 4 => 4, 5 => 5),
+      '#default_value' => $default_function,
+      '#weight' => -1000,
+    );
+  }
+  
+  //$form['weight']
+}
+
+function executive_initiative_webform_component_insert($component) {
+  executive_initiative_webform_component_update($component);
+}
+
+function executive_initiative_webform_component_update($component) {
+  if (isset($component['executive_initiative_function'])) {
+    executive_initiative_save_function($component['nid'], $component['cid'], $component['executive_initiative_function']);
+  }
+}
+
+function executive_initiative_save_function($nid, $cid, $function) {
+  db_merge('assessment_question_functions')
+    ->key(array('nid' => $nid, 'cid' => $cid))
+    ->fields(array(
+      'function' => $function,
+    ))->execute();
+}
+
+function executive_initiative_get_function($nid, $cid) {
+  $tier = db_query("SELECT function FROM {assessment_question_functions} WHERE nid = :nid AND cid = :cid",
+                      array(':nid' => $nid, ':cid' => $cid))->fetchField();
+                      
+  return $tier ? $tier : FALSE;
+}
+
+function executive_initiative_theme() {
+  return array(
+    'executive_initiative_results' => array(
+      'variables' => array('function1' => NULL, 'function2' => NULL, 'function3' => NULL),
+      'template' => 'executive-initiative-results',
+    ),
+  );
+}

@@ -1,0 +1,4 @@
+name = Capability Maturity Level
+description = Assigns a Capability Maturity Level to users.
+core = 7.x
+version = 7.x-1.0-dev

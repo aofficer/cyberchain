@@ -1,0 +1,34 @@
+<?php
+
+/** Implements hook_menu() **/
+function settings_menu() {
+  $menu = array();
+  
+  $menu['admin/config/settings-steez'] = array(
+    'title' => 'Settings Steez',
+    'description' => 'Sitewide settings to steez the breeze.',
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+  $menu['admin/config/settings-steez/voting'] = array(
+    'title' => 'Voting',
+    'description' => 'Change the settings for voting features.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('settings_voting_settings'),
+    'access arguments' => array('access administration pages'),
+    'file' => 'settings.admin.inc',
+  );
+  $menu['admin/config/settings-steez/misc'] = array(
+    'title' => 'Miscellaneous',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('settings_misc_settings'),
+    'access arguments' => array('access administration pages'),
+    'file' => 'settings.admin.inc',
+  );
+  
+  return $menu;
+}
+
+

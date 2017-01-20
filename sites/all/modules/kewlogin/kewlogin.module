@@ -1,0 +1,85 @@
+<?php
+
+/** Implements hook_block_info() **/
+function kewlogin_block_info() {
+  $info = array();
+  
+  $info['kewlogin'] = array(
+    'info' => t('Kewl login'),
+  );
+  
+  return $info;
+}
+
+/** Implements hook_block_view() **/
+function kewlogin_block_view($delta = '') {
+  $block = array();
+  
+  switch ($delta) {
+    case 'kewlogin':
+      //$block['subject'] = t('Kewl'),
+      $block['content'] = kewlogin_login_block();
+      //$block['content'] = 'harpf';
+      
+      return $block;
+      break;
+  }
+}
+
+function kewlogin_block_configure($delta) {
+
+}
+
+function kewlogin_block_save() {
+  
+}
+
+function kewlogin_login_block() {
+  global $user;
+  
+  if (!$user->uid) {
+    $output = drupal_get_form('user_login', 1);
+  }
+  else {
+    return theme('kewlogin_welcome', array('user' => $user));
+  }
+  
+  return $output;
+}
+
+/** Implements hook_form_FORM_ID_alter() {} **/
+function kewlogin_form_user_login_alter(&$form, &$form_state, $form_id) {
+  if (isset($form_state['build_info']['args'][0]) && $form_state['build_info']['args'][0] == 1) {
+    // this is a kewl form
+    drupal_add_css(drupal_get_path('module', 'kewlogin') . '/kewlogin.css');
+    drupal_add_js(drupal_get_path('module', 'kewlogin') . '/kewlogin.js');
+    
+    $form['name']['#size'] = 12;
+    //$form['name']['#default_value'] = t('username');
+    $form['name']['#title_display'] = 'invisible';
+    unset($form['name']['#description']);
+    
+    $form['pass']['#size'] = 12;
+    //$form['pass']['#default_value'] = t('password');
+    $form['pass']['#title_display'] = 'invisible';
+    unset($form['pass']['#description']);
+    
+    /*$form['register'] = array(
+      '#type' => 'item',
+      '#markup' => '<div style="clear:both">' . l(t('Register'), 'user/register') . '</div>',
+    );*/
+  }
+}
+
+/** Implements hook_theme() **/
+function kewlogin_theme($existing, $type, $theme, $path) {
+  return array(
+    'kewlogin_welcome' => array(
+      'variables' => array('user' => NULL),
+    ),
+  );
+}
+
+function theme_kewlogin_welcome() {
+  return 'oh hai';
+}

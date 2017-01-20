@@ -1,0 +1,5 @@
+name = File Steez
+description = Provides so uber customization that lets users easily upload files.
+core = "7.x"
+version = "7.x-1.0-dev"
+package = Steez

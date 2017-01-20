@@ -1,0 +1,80 @@
+<?php
+
+/** Implements hook_schema() **/
+function og_invite_schema() {
+  $schema = array();
+  
+  $schema['og_invite'] = array(
+    'description' => t('Stores invitations to groups.'),
+    'fields' => array(
+      'invite_id' => array(
+        'description' => t('Unique ID for the inivitation.'),
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'gid' => array(
+        'description' => t('Group that the invitee is being invited to.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'invitee' => array(
+        'description' => t('The user who was invited.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'inviter' => array(
+        'description' => t('The user doing the inviting.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'email' => array(
+        'description' => t('If the invited user is not a member of the site, we want to send them an email.'),
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'status' => array(
+        'description' => t('The status of the invitation. Could have four possible values: extended, accepted, declined, or defected.'),
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'hash' => array(
+        'description' => t('The hash that the invitee needs in order to accept the invitation and become a member of the group.'),
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'extended' => array(
+        'description' => t('When the invitation was extended.'),
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'responded' => array(
+        'description' => t('When the invitation was responded to.'),
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('invite_id'),
+    'indexes' => array(
+      'gid' => array('gid'),
+      'invitee' => array('invitee'),
+      'inviter' => array('inviter'),
+    ),
+  );
+  
+  return $schema;
+}

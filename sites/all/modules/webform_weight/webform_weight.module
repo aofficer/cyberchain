@@ -1,0 +1,48 @@
+<?php
+
+/** Implements hook_form_FORM_ID_alter() **/
+function webform_weight_form_webform_component_edit_form_alter(&$form, &$form_state, $form_id) {
+  //print($form);
+  //print $form_id;
+  if ($form['type']['#value'] != 'fieldset') {
+    $points = array();
+    for ($i = 0; $i <= 100; $i++) {
+      $points[$i] = $i;
+    }
+    $default_points = webform_weight_get_points($form['nid']['#value'], $form['cid']['#value']);
+    $form['webform_weight_points'] = array(
+      '#type' => 'select',
+      '#title' => t('Points'),
+      '#description' => t('How many points is this question worth?'),
+      '#options' => $points,
+      '#default_value' => $default_points,
+      '#weight' => -1000,
+    );
+  }
+  
+  //$form['weight']
+}
+
+function webform_weight_webform_component_insert($component) {
+  webform_weight_webform_component_update($component);
+}
+function webform_weight_webform_component_update($component) {
+  if (isset($component['webform_weight_points'])) {
+    webform_weight_save_points($component['nid'], $component['cid'], $component['webform_weight_points']);
+  }
+}
+
+function webform_weight_save_points($nid, $cid, $points) {
+  db_merge('webform_weight')
+    ->key(array('nid' => $nid, 'cid' => $cid))
+    ->fields(array(
+      'points' => $points,
+    ))->execute();
+}
+
+function webform_weight_get_points($nid, $cid) {
+  $points = db_query("SELECT points FROM {webform_weight} WHERE nid = :nid AND cid = :cid",
+                      array(':nid' => $nid, ':cid' => $cid))->fetchField();
+                      
+  return $points ? $points : FALSE;
+}

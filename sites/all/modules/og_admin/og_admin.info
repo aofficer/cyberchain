@@ -1,0 +1,4 @@
+name = OG Admin
+description = Admin stuff for groups.
+core = 7.x
+version = 7.x-1.0-dev

@@ -1,0 +1,3 @@
+name = cybercharts
+description = A custom module of D3 charts
+core = 7.x
